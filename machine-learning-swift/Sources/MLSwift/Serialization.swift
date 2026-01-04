@@ -169,7 +169,7 @@ extension SequentialModel {
             return LayerData(
                 type: "Dropout",
                 config: [
-                    "dropoutRate": String(dropout.training ? 0.5 : 0.0) // Note: can't access private dropoutRate
+                    "dropoutRate": String(dropout.rate)
                 ],
                 parameters: []
             )

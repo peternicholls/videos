@@ -322,6 +322,11 @@ public class DropoutLayer: Layer {
     /// Whether the layer is in training mode
     public var training: Bool = true
     
+    /// Get the dropout rate (for serialization)
+    internal var rate: Float {
+        return dropoutRate
+    }
+    
     /// Initialize dropout layer
     /// - Parameter dropoutRate: Fraction of inputs to drop (0.0 to 1.0)
     public init(dropoutRate: Float = 0.5) {
@@ -390,6 +395,11 @@ public class DropoutLayer: Layer {
 
 /// Batch Normalization layer
 /// Normalizes inputs across the batch dimension
+/// 
+/// **Note**: This implementation is simplified for single-sample inputs.
+/// Batch normalization is typically designed for mini-batches (multiple samples).
+/// For single samples during training, variance is approximated with epsilon for numerical stability.
+/// For production use with proper batching, consider extending this implementation.
 public class BatchNormLayer: Layer {
     /// Number of features to normalize
     private let numFeatures: Int

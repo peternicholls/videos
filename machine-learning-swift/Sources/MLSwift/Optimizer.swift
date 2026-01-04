@@ -43,7 +43,7 @@ public class SGDMomentumOptimizer: Optimizer {
     private let momentum: Float
     
     /// Velocity terms for each parameter
-    private var velocities: [[Matrix]]
+    private var velocities: [Matrix]
     
     /// Initialize SGD with momentum
     /// - Parameter momentum: Momentum coefficient (default 0.9)
@@ -60,24 +60,19 @@ public class SGDMomentumOptimizer: Optimizer {
         
         // Initialize velocities on first call
         if velocities.isEmpty {
-            velocities = [[Matrix]](repeating: parameters.map { Matrix(rows: $0.rows, cols: $0.cols) },
-                                   count: 1)
+            velocities = parameters.map { Matrix(rows: $0.rows, cols: $0.cols) }
         }
-        
-        var velocity = velocities[0]
         
         for i in 0..<parameters.count {
             // v = momentum * v + learning_rate * gradient
-            velocity[i].scale(by: momentum)
+            velocities[i].scale(by: momentum)
             var scaledGrad = gradients[i]
             scaledGrad.scale(by: learningRate)
-            velocity[i] = Matrix.add(velocity[i], scaledGrad)
+            velocities[i] = Matrix.add(velocities[i], scaledGrad)
             
             // parameter = parameter - v
-            parameters[i] = Matrix.subtract(parameters[i], velocity[i])
+            parameters[i] = Matrix.subtract(parameters[i], velocities[i])
         }
-        
-        velocities[0] = velocity
     }
     
     public func reset() {
@@ -97,10 +92,10 @@ public class AdamOptimizer: Optimizer {
     private let epsilon: Float
     
     /// First moment estimates (mean of gradients)
-    private var m: [[Matrix]]
+    private var m: [Matrix]
     
     /// Second moment estimates (uncentered variance of gradients)
-    private var v: [[Matrix]]
+    private var v: [Matrix]
     
     /// Time step counter
     private var t: Int
@@ -129,38 +124,34 @@ public class AdamOptimizer: Optimizer {
         
         // Initialize moment estimates on first call
         if m.isEmpty {
-            m = [[Matrix]](repeating: parameters.map { Matrix(rows: $0.rows, cols: $0.cols) },
-                          count: 1)
-            v = [[Matrix]](repeating: parameters.map { Matrix(rows: $0.rows, cols: $0.cols) },
-                          count: 1)
+            m = parameters.map { Matrix(rows: $0.rows, cols: $0.cols) }
+            v = parameters.map { Matrix(rows: $0.rows, cols: $0.cols) }
         }
         
         t += 1
-        var mEstimates = m[0]
-        var vEstimates = v[0]
         
         for i in 0..<parameters.count {
             // Update biased first moment estimate: m = beta1 * m + (1 - beta1) * gradient
-            mEstimates[i].scale(by: beta1)
+            m[i].scale(by: beta1)
             var gradScaled = gradients[i]
             gradScaled.scale(by: 1.0 - beta1)
-            mEstimates[i] = Matrix.add(mEstimates[i], gradScaled)
+            m[i] = Matrix.add(m[i], gradScaled)
             
             // Update biased second moment estimate: v = beta2 * v + (1 - beta2) * gradient^2
-            vEstimates[i].scale(by: beta2)
+            v[i].scale(by: beta2)
             var gradSquared = gradients[i]
             for j in 0..<gradSquared.data.count {
                 gradSquared.data[j] = gradSquared.data[j] * gradSquared.data[j] * (1.0 - beta2)
             }
-            vEstimates[i] = Matrix.add(vEstimates[i], gradSquared)
+            v[i] = Matrix.add(v[i], gradSquared)
             
             // Compute bias-corrected first moment estimate
-            var mHat = mEstimates[i]
+            var mHat = m[i]
             let biasCorrection1 = 1.0 - pow(beta1, Float(t))
             mHat.scale(by: 1.0 / biasCorrection1)
             
             // Compute bias-corrected second moment estimate
-            var vHat = vEstimates[i]
+            var vHat = v[i]
             let biasCorrection2 = 1.0 - pow(beta2, Float(t))
             vHat.scale(by: 1.0 / biasCorrection2)
             
@@ -172,9 +163,6 @@ public class AdamOptimizer: Optimizer {
             
             parameters[i] = Matrix.subtract(parameters[i], update)
         }
-        
-        m[0] = mEstimates
-        v[0] = vEstimates
     }
     
     public func reset() {
@@ -193,7 +181,7 @@ public class RMSpropOptimizer: Optimizer {
     private let epsilon: Float
     
     /// Moving average of squared gradients
-    private var cache: [[Matrix]]
+    private var cache: [Matrix]
     
     /// Initialize RMSprop optimizer
     /// - Parameters:
@@ -214,31 +202,26 @@ public class RMSpropOptimizer: Optimizer {
         
         // Initialize cache on first call
         if cache.isEmpty {
-            cache = [[Matrix]](repeating: parameters.map { Matrix(rows: $0.rows, cols: $0.cols) },
-                              count: 1)
+            cache = parameters.map { Matrix(rows: $0.rows, cols: $0.cols) }
         }
-        
-        var cacheEstimates = cache[0]
         
         for i in 0..<parameters.count {
             // Update cache: cache = decay * cache + (1 - decay) * gradient^2
-            cacheEstimates[i].scale(by: decay)
+            cache[i].scale(by: decay)
             var gradSquared = gradients[i]
             for j in 0..<gradSquared.data.count {
                 gradSquared.data[j] = gradSquared.data[j] * gradSquared.data[j] * (1.0 - decay)
             }
-            cacheEstimates[i] = Matrix.add(cacheEstimates[i], gradSquared)
+            cache[i] = Matrix.add(cache[i], gradSquared)
             
             // Update parameters: parameter = parameter - learningRate * gradient / (sqrt(cache) + epsilon)
             var update = Matrix(rows: parameters[i].rows, cols: parameters[i].cols)
             for j in 0..<update.data.count {
-                update.data[j] = learningRate * gradients[i].data[j] / (sqrt(cacheEstimates[i].data[j]) + epsilon)
+                update.data[j] = learningRate * gradients[i].data[j] / (sqrt(cache[i].data[j]) + epsilon)
             }
             
             parameters[i] = Matrix.subtract(parameters[i], update)
         }
-        
-        cache[0] = cacheEstimates
     }
     
     public func reset() {
