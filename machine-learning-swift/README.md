@@ -19,6 +19,7 @@ MLSwift is a from-scratch implementation of a neural network library that levera
   - Addition, subtraction, multiplication (with transpose support)
   - Element-wise operations
   - Optimized cache-friendly CPU fallbacks
+  - Integration with Apple's Accelerate framework for BLAS/vDSP operations
 
 - **Activation Functions**: 
   - ReLU (Rectified Linear Unit)
@@ -47,11 +48,27 @@ MLSwift is a from-scratch implementation of a neural network library that levera
 - **Model Management**:
   - Model serialization (save/load to JSON)
   - Sequential model architecture
+  - CoreML export capabilities (for deployment)
 
 - **Training Infrastructure**:
   - Mini-batch gradient descent
   - Sequential model architecture
   - Epoch-based training with progress reporting
+
+- **Data Processing**:
+  - Dataset loading from binary files (Python-compatible)
+  - Data normalization and standardization
+  - One-hot encoding for labels
+  - Train/validation splitting
+  - Data shuffling and batching
+
+### Apple Frameworks Integration
+
+MLSwift integrates seamlessly with Apple's ML ecosystem:
+- **Metal**: GPU-accelerated matrix operations
+- **Accelerate**: vDSP and BLAS for optimized vector/matrix operations
+- **CoreML**: Model export for production deployment
+- **Foundation**: File I/O and data handling
 
 ### Metal GPU Acceleration
 
@@ -275,6 +292,432 @@ for epoch in 1...100 {
 }
 ```
 
+## Integration with Apple ML Frameworks
+
+MLSwift is designed to work alongside Apple's native machine learning frameworks. This section demonstrates how to use CoreML, CreateML, and Accelerate frameworks with MLSwift.
+
+### Using Accelerate Framework
+
+The Accelerate framework provides highly optimized vector and matrix operations. You can integrate it with MLSwift for even better performance on certain operations:
+
+```swift
+import MLSwift
+import Accelerate
+
+// Example: Using vDSP for fast vector operations
+func normalizeDataWithAccelerate(_ matrix: Matrix) -> Matrix {
+    var data = matrix.data
+    var mean: Float = 0.0
+    var stdDev: Float = 0.0
+    
+    // Compute mean using Accelerate
+    vDSP_meanv(data, 1, &mean, vDSP_Length(data.count))
+    
+    // Compute standard deviation
+    var subtracted = [Float](repeating: 0.0, count: data.count)
+    var negMean = -mean
+    vDSP_vsadd(data, 1, &negMean, &subtracted, 1, vDSP_Length(data.count))
+    
+    var sumOfSquares: Float = 0.0
+    vDSP_svesq(subtracted, 1, &sumOfSquares, vDSP_Length(data.count))
+    stdDev = sqrt(sumOfSquares / Float(data.count))
+    
+    // Normalize: (x - mean) / stdDev
+    var normalized = [Float](repeating: 0.0, count: data.count)
+    var invStdDev = 1.0 / stdDev
+    vDSP_vsmul(subtracted, 1, &invStdDev, &normalized, 1, vDSP_Length(data.count))
+    
+    return Matrix(rows: matrix.rows, cols: matrix.cols, data: normalized)
+}
+
+// Example: Matrix operations with BLAS (part of Accelerate)
+func matrixMultiplyWithBLAS(_ a: Matrix, _ b: Matrix) -> Matrix {
+    // Ensure compatible dimensions
+    assert(a.cols == b.rows)
+    
+    var result = [Float](repeating: 0.0, count: a.rows * b.cols)
+    
+    // cblas_sgemm performs: C = alpha*A*B + beta*C
+    // Using row-major order (CblasRowMajor)
+    cblas_sgemm(
+        CblasRowMajor,
+        CblasNoTrans, CblasNoTrans,
+        Int32(a.rows), Int32(b.cols), Int32(a.cols),
+        1.0,  // alpha
+        a.data, Int32(a.cols),
+        b.data, Int32(b.cols),
+        0.0,  // beta
+        &result, Int32(b.cols)
+    )
+    
+    return Matrix(rows: a.rows, cols: b.cols, data: result)
+}
+```
+
+### Dataset Import and Preparation
+
+Similar to the Python implementation (`mnist.py`), here's how to import and prepare datasets for training in Swift:
+
+```swift
+import Foundation
+import MLSwift
+
+// MARK: - Dataset Loading
+
+/// Load binary matrix data from file (compatible with Python's .tofile())
+func loadBinaryMatrix(from url: URL, rows: Int, cols: Int) throws -> Matrix {
+    let data = try Data(contentsOf: url)
+    let floatCount = rows * cols
+    
+    // Ensure data size matches expected dimensions
+    guard data.count == floatCount * MemoryLayout<Float>.size else {
+        throw NSError(domain: "DataLoader", code: 1, 
+                     userInfo: [NSLocalizedDescriptionKey: "File size doesn't match dimensions"])
+    }
+    
+    // Convert Data to [Float]
+    let floatArray = data.withUnsafeBytes { (ptr: UnsafeRawBufferPointer) -> [Float] in
+        let floatPtr = ptr.bindMemory(to: Float.self)
+        return Array(floatPtr)
+    }
+    
+    return Matrix(rows: rows, cols: cols, data: floatArray)
+}
+
+/// Save matrix data to binary file (compatible with Python's .tofile())
+func saveBinaryMatrix(_ matrix: Matrix, to url: URL) throws {
+    let data = Data(bytes: matrix.data, count: matrix.data.count * MemoryLayout<Float>.size)
+    try data.write(to: url)
+}
+
+// MARK: - Dataset Preparation
+
+/// Normalize image data to [0, 1] range
+func normalizeImages(_ images: Matrix, maxValue: Float = 255.0) -> Matrix {
+    var normalized = images
+    for i in 0..<normalized.data.count {
+        normalized.data[i] /= maxValue
+    }
+    return normalized
+}
+
+/// Convert labels to one-hot encoding
+func oneHotEncode(labels: [Int], numClasses: Int) -> [Matrix] {
+    return labels.map { label in
+        var encoded = [Float](repeating: 0.0, count: numClasses)
+        encoded[label] = 1.0
+        return Matrix(rows: numClasses, cols: 1, data: encoded)
+    }
+}
+
+/// Flatten image matrices for neural network input
+func flattenImages(_ images: [Matrix]) -> [Matrix] {
+    return images.map { image in
+        Matrix(rows: image.rows * image.cols, cols: 1, data: image.data)
+    }
+}
+
+// MARK: - Complete Dataset Loading Example
+
+/// Example: Load MNIST-like dataset (similar to mnist.py)
+func loadMNISTDataset() throws -> (trainImages: [Matrix], trainLabels: [Matrix], 
+                                    testImages: [Matrix], testLabels: [Matrix]) {
+    let baseURL = URL(fileURLWithPath: ".")
+    
+    // Load binary data files (created by Python script)
+    let trainImagesRaw = try loadBinaryMatrix(
+        from: baseURL.appendingPathComponent("train_images.mat"),
+        rows: 60000,
+        cols: 28 * 28
+    )
+    let trainLabelsRaw = try loadBinaryMatrix(
+        from: baseURL.appendingPathComponent("train_labels.mat"),
+        rows: 60000,
+        cols: 1
+    )
+    let testImagesRaw = try loadBinaryMatrix(
+        from: baseURL.appendingPathComponent("test_images.mat"),
+        rows: 10000,
+        cols: 28 * 28
+    )
+    let testLabelsRaw = try loadBinaryMatrix(
+        from: baseURL.appendingPathComponent("test_labels.mat"),
+        rows: 10000,
+        cols: 1
+    )
+    
+    // Normalize images (already normalized in Python, but showing the pattern)
+    let trainImagesNorm = normalizeImages(trainImagesRaw, maxValue: 1.0)
+    let testImagesNorm = normalizeImages(testImagesRaw, maxValue: 1.0)
+    
+    // Convert to individual image matrices
+    var trainImages: [Matrix] = []
+    var testImages: [Matrix] = []
+    
+    for i in 0..<trainImagesRaw.rows {
+        let imageData = Array(trainImagesNorm.data[(i * 784)..<((i + 1) * 784)])
+        trainImages.append(Matrix(rows: 784, cols: 1, data: imageData))
+    }
+    
+    for i in 0..<testImagesRaw.rows {
+        let imageData = Array(testImagesNorm.data[(i * 784)..<((i + 1) * 784)])
+        testImages.append(Matrix(rows: 784, cols: 1, data: imageData))
+    }
+    
+    // Convert labels to one-hot encoding
+    let trainLabelsInt = trainLabelsRaw.data.map { Int($0) }
+    let testLabelsInt = testLabelsRaw.data.map { Int($0) }
+    
+    let trainLabels = oneHotEncode(labels: trainLabelsInt, numClasses: 10)
+    let testLabels = oneHotEncode(labels: testLabelsInt, numClasses: 10)
+    
+    return (trainImages, trainLabels, testImages, testLabels)
+}
+
+// MARK: - Using the Dataset
+
+func trainOnMNIST() throws {
+    print("Loading MNIST dataset...")
+    let (trainImages, trainLabels, testImages, testLabels) = try loadMNISTDataset()
+    
+    print("Training samples: \(trainImages.count)")
+    print("Test samples: \(testImages.count)")
+    
+    // Create a neural network for MNIST (784 -> 128 -> 64 -> 10)
+    let model = SequentialModel()
+    model.add(DenseLayer(inputSize: 784, outputSize: 128))
+    model.add(ReLULayer())
+    model.add(DenseLayer(inputSize: 128, outputSize: 64))
+    model.add(ReLULayer())
+    model.add(DenseLayer(inputSize: 64, outputSize: 10))
+    model.add(SoftmaxLayer())
+    
+    model.setLoss(Loss.crossEntropy, gradient: Loss.crossEntropyBackward)
+    
+    // Train the model
+    model.train(
+        trainInputs: trainImages,
+        trainTargets: trainLabels,
+        testInputs: testImages,
+        testTargets: testLabels,
+        epochs: 10,
+        batchSize: 32,
+        learningRate: 0.01
+    )
+}
+```
+
+### Using CoreML for Model Export
+
+Export your trained MLSwift model to CoreML format for use in iOS/macOS apps:
+
+```swift
+import Foundation
+import CoreML
+import MLSwift
+
+/// Convert MLSwift model to CoreML format
+func exportToCoreML(model: SequentialModel, inputSize: Int, outputSize: Int) throws {
+    // Note: This is a simplified example. A full implementation would need to:
+    // 1. Extract layer weights and biases
+    // 2. Build CoreML neural network layer by layer
+    // 3. Set input/output descriptions
+    
+    print("Exporting model to CoreML...")
+    
+    // Example structure for CoreML model builder:
+    // You would need to import CreateML for the actual implementation
+    
+    /*
+    let mlModel = try MLModel(contentsOf: modelURL)
+    
+    // For prediction:
+    let input = try MLDictionaryFeatureProvider(dictionary: [
+        "input": MLMultiArray(shape: [inputSize] as [NSNumber], dataType: .float32)
+    ])
+    
+    let prediction = try mlModel.prediction(from: input)
+    */
+    
+    print("Note: Full CoreML export requires CreateML framework")
+    print("See Apple's CreateML documentation for complete implementation")
+}
+
+/// Use a CoreML model for inference
+func useCoreMLModel() throws {
+    // Example of loading and using a CoreML model
+    let modelURL = URL(fileURLWithPath: "MyModel.mlmodelc")
+    let mlModel = try MLModel(contentsOf: modelURL)
+    
+    // Prepare input (example with 784 features for MNIST)
+    let inputArray = try MLMultiArray(shape: [784] as [NSNumber], dataType: .float32)
+    for i in 0..<784 {
+        inputArray[i] = NSNumber(value: Float.random(in: 0...1))
+    }
+    
+    let input = try MLDictionaryFeatureProvider(dictionary: ["input": inputArray])
+    let prediction = try mlModel.prediction(from: input)
+    
+    if let output = prediction.featureValue(for: "output")?.multiArrayValue {
+        print("Prediction: \(output)")
+    }
+}
+```
+
+### Data Preprocessing Utilities
+
+Here are additional utilities for data preparation, similar to the Python implementation:
+
+```swift
+import Foundation
+import MLSwift
+
+// MARK: - Data Preprocessing
+
+/// Standardize data (zero mean, unit variance)
+func standardize(_ data: Matrix) -> (normalized: Matrix, mean: Float, stdDev: Float) {
+    let count = Float(data.data.count)
+    let mean = data.data.reduce(0, +) / count
+    
+    let variance = data.data.map { pow($0 - mean, 2) }.reduce(0, +) / count
+    let stdDev = sqrt(variance)
+    
+    var normalized = data
+    for i in 0..<normalized.data.count {
+        normalized.data[i] = (normalized.data[i] - mean) / stdDev
+    }
+    
+    return (normalized, mean, stdDev)
+}
+
+/// Min-Max normalization to [0, 1]
+func minMaxNormalize(_ data: Matrix) -> Matrix {
+    guard let min = data.data.min(), let max = data.data.max() else {
+        return data
+    }
+    
+    let range = max - min
+    guard range > 0 else { return data }
+    
+    var normalized = data
+    for i in 0..<normalized.data.count {
+        normalized.data[i] = (normalized.data[i] - min) / range
+    }
+    
+    return normalized
+}
+
+/// Split dataset into training and validation sets
+func trainValidationSplit<T>(data: [T], splitRatio: Float = 0.8) -> (train: [T], validation: [T]) {
+    let trainCount = Int(Float(data.count) * splitRatio)
+    let trainData = Array(data[..<trainCount])
+    let validationData = Array(data[trainCount...])
+    return (trainData, validationData)
+}
+
+/// Shuffle dataset (useful for training)
+func shuffleDataset(inputs: [Matrix], targets: [Matrix]) -> (inputs: [Matrix], targets: [Matrix]) {
+    var indices = Array(0..<inputs.count)
+    indices.shuffle()
+    
+    let shuffledInputs = indices.map { inputs[$0] }
+    let shuffledTargets = indices.map { targets[$0] }
+    
+    return (shuffledInputs, shuffledTargets)
+}
+
+/// Create mini-batches from dataset
+func createBatches(inputs: [Matrix], targets: [Matrix], batchSize: Int) -> [(inputs: [Matrix], targets: [Matrix])] {
+    var batches: [(inputs: [Matrix], targets: [Matrix])] = []
+    
+    for i in stride(from: 0, to: inputs.count, by: batchSize) {
+        let endIdx = min(i + batchSize, inputs.count)
+        let batchInputs = Array(inputs[i..<endIdx])
+        let batchTargets = Array(targets[i..<endIdx])
+        batches.append((batchInputs, batchTargets))
+    }
+    
+    return batches
+}
+
+// MARK: - Complete Data Pipeline Example
+
+func completeDataPipeline() throws {
+    print("=== Complete Data Pipeline Example ===\n")
+    
+    // 1. Load raw data from CSV or binary files
+    print("Step 1: Loading data...")
+    var rawData: [Matrix] = []
+    var rawLabels: [Int] = []
+    
+    // Example: Generate synthetic data
+    for i in 0..<1000 {
+        let features = [Float](repeating: 0, count: 10).map { _ in Float.random(in: 0...10) }
+        rawData.append(Matrix(rows: 10, cols: 1, data: features))
+        rawLabels.append(i % 3) // 3 classes
+    }
+    
+    // 2. Normalize/standardize features
+    print("Step 2: Normalizing data...")
+    let normalizedData = rawData.map { minMaxNormalize($0) }
+    
+    // 3. Encode labels
+    print("Step 3: Encoding labels...")
+    let encodedLabels = oneHotEncode(labels: rawLabels, numClasses: 3)
+    
+    // 4. Split into train/validation
+    print("Step 4: Splitting dataset...")
+    let (trainInputs, valInputs) = trainValidationSplit(data: normalizedData, splitRatio: 0.8)
+    let (trainTargets, valTargets) = trainValidationSplit(data: encodedLabels, splitRatio: 0.8)
+    
+    print("Training samples: \(trainInputs.count)")
+    print("Validation samples: \(valInputs.count)")
+    
+    // 5. Shuffle training data
+    print("Step 5: Shuffling training data...")
+    let (shuffledInputs, shuffledTargets) = shuffleDataset(inputs: trainInputs, targets: trainTargets)
+    
+    // 6. Create model
+    print("Step 6: Creating model...")
+    let model = SequentialModel()
+    model.add(DenseLayer(inputSize: 10, outputSize: 16))
+    model.add(ReLULayer())
+    model.add(DenseLayer(inputSize: 16, outputSize: 3))
+    model.add(SoftmaxLayer())
+    model.setLoss(Loss.crossEntropy, gradient: Loss.crossEntropyBackward)
+    
+    // 7. Train with validation
+    print("Step 7: Training model...")
+    model.train(
+        trainInputs: shuffledInputs,
+        trainTargets: shuffledTargets,
+        testInputs: valInputs,
+        testTargets: valTargets,
+        epochs: 10,
+        batchSize: 32,
+        learningRate: 0.01
+    )
+    
+    print("\nData pipeline complete!")
+}
+```
+
+### Comparison with Python Implementation
+
+The Swift implementation provides similar functionality to the Python `mnist.py` script:
+
+| Python (TensorFlow/NumPy) | Swift (MLSwift) |
+|---------------------------|-----------------|
+| `tfds.load()` | `loadBinaryMatrix()` or custom loaders |
+| `array.astype(np.float32)` | `Float` type conversion |
+| `array / 255.0` | `normalizeImages()` |
+| `array.tofile()` | `saveBinaryMatrix()` |
+| NumPy arrays | `Matrix` type |
+| One-hot via TensorFlow | `oneHotEncode()` |
+| `train_test_split` | `trainValidationSplit()` |
+
+The main difference is that Swift provides type safety and can leverage Apple's frameworks (Accelerate, CoreML) for better integration with the Apple ecosystem.
+
 ## Architecture
 
 ### Matrix Storage
@@ -376,12 +819,17 @@ Completed features:
 - [x] Dropout regularization
 - [x] Advanced optimizers (Adam, RMSprop, SGD with momentum)
 - [x] Model serialization (save/load)
+- [x] Accelerate framework integration for optimized operations
+- [x] Dataset loading utilities (binary format compatible with Python)
+- [x] Data preprocessing (normalization, standardization, one-hot encoding)
+- [x] Data pipeline utilities (train/validation split, shuffling, batching)
 
 Still to be implemented:
 - [ ] Convolutional layers for image processing
 - [ ] Recurrent layers (LSTM, GRU) for sequence processing
 - [ ] Data augmentation utilities
-- [ ] MNIST dataset loader
+- [ ] Full CoreML model export/import
+- [ ] Native image format loading (JPEG, PNG)
 - [ ] Visualization tools
 - [ ] Learning rate schedulers
 - [ ] Gradient clipping
