@@ -133,10 +133,14 @@ public class SequentialModel {
         // Average loss
         let avgLoss = totalLoss / Float(inputs.count)
         
-        // Update parameters with averaged gradients
-        let batchLearningRate = learningRate / Float(inputs.count)
+        // Scale gradients to average them across the batch
         for layer in layers {
-            layer.updateParameters(learningRate: batchLearningRate)
+            layer.scaleGradients(by: 1.0 / Float(inputs.count))
+        }
+        
+        // Update parameters with averaged gradients
+        for layer in layers {
+            layer.updateParameters(learningRate: learningRate)
         }
         
         return avgLoss

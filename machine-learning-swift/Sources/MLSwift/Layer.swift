@@ -27,6 +27,10 @@ public protocol Layer {
     /// Update parameters using gradients
     /// - Parameter learningRate: Learning rate for gradient descent
     func updateParameters(learningRate: Float)
+    
+    /// Scale accumulated gradients by a factor
+    /// - Parameter scale: Scaling factor
+    func scaleGradients(by scale: Float)
 }
 
 /// Fully connected (dense) layer
@@ -135,17 +139,27 @@ public class DenseLayer: Layer {
     }
     
     public func updateParameters(learningRate: Float) {
+        // Scale gradients by learning rate
+        var scaledWeightGrad = weightGrad
+        scaledWeightGrad.scale(by: learningRate)
+        
+        var scaledBiasGrad = biasGrad
+        scaledBiasGrad.scale(by: learningRate)
+        
         // Update weights: W = W - lr * dW
-        let weightUpdate = Matrix.subtract(weights, weightGrad)
-        weights = weightUpdate
+        weights = Matrix.subtract(weights, scaledWeightGrad)
         
         // Update bias: b = b - lr * db
-        let biasUpdate = Matrix.subtract(bias, biasGrad)
-        bias = biasUpdate
+        bias = Matrix.subtract(bias, scaledBiasGrad)
         
         // Zero gradients
         weightGrad.zero()
         biasGrad.zero()
+    }
+    
+    public func scaleGradients(by scale: Float) {
+        weightGrad.scale(by: scale)
+        biasGrad.scale(by: scale)
     }
 }
 
@@ -179,6 +193,10 @@ public class ReLULayer: Layer {
     public func updateParameters(learningRate: Float) {
         // No parameters to update
     }
+    
+    public func scaleGradients(by scale: Float) {
+        // No gradients to scale
+    }
 }
 
 /// Softmax activation layer
@@ -211,5 +229,9 @@ public class SoftmaxLayer: Layer {
     
     public func updateParameters(learningRate: Float) {
         // No parameters to update
+    }
+    
+    public func scaleGradients(by scale: Float) {
+        // No gradients to scale
     }
 }

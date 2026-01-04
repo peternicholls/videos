@@ -36,10 +36,14 @@ public class MetalDevice {
         self.commandQueue = commandQueue
         
         // Load Metal library from source
-        guard let library = try? device.makeDefaultLibrary() else {
-            fatalError("Failed to create Metal library")
+        do {
+            guard let library = try device.makeDefaultLibrary() else {
+                fatalError("Failed to create Metal library: Library is nil")
+            }
+            self.library = library
+        } catch {
+            fatalError("Failed to create Metal library: \(error.localizedDescription)")
         }
-        self.library = library
         
         // Pre-compile commonly used compute pipelines
         compileCommonPipelines()
