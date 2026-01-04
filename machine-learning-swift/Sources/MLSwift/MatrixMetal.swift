@@ -123,9 +123,10 @@ extension Matrix {
         } else if !transposeA && transposeB {
             kernelName = "matrix_multiply_transpose_b"
         } else {
-            // For transpose both, we can use transpose_a with swapped inputs
-            // This is a simplification; a dedicated kernel would be more efficient
-            kernelName = "matrix_multiply"
+            // Both transposeA and transposeB are true
+            // Using the basic matrix_multiply kernel without actually transposing
+            // the inputs would produce incorrect results. Fail fast instead.
+            preconditionFailure("Matrix.multiplyGPU does not support transposeA && transposeB; transpose inputs explicitly or add a dedicated double-transpose kernel.")
         }
         
         try device.execute2D(

@@ -36,17 +36,6 @@ typedef struct {
     f32* data;       /**< Row-major data array */
 } matrix;
 
-/**
- * @brief Matrix structure for row-major matrices
- * 
- * Represents a 2D matrix stored in row-major order, where element (i,j)
- * is at index (i * cols + j) in the data array.
- */
-typedef struct {
-    u32 rows, cols;  /**< Matrix dimensions */
-    f32* data;       /**< Row-major data array */
-} matrix;
-
 /* Matrix operation function declarations */
 
 /**

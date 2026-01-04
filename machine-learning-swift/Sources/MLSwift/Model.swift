@@ -223,9 +223,8 @@ public class SequentialModel {
                 )
                 epochLoss += batchLoss
                 
-                // Print progress
+                // Print progress (Swift handles flushing automatically)
                 print("Epoch \(epoch)/\(epochs), Batch \(batch+1)/\(numBatches), Loss: \(String(format: "%.4f", batchLoss))", terminator: "\r")
-                fflush(stdout)
             }
             
             let avgEpochLoss = epochLoss / Float(numBatches)
