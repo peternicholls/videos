@@ -1,3 +1,20 @@
+/**
+ * @file main.c
+ * @brief Neural network library with automatic differentiation
+ * 
+ * This file implements a simple yet complete neural network library with:
+ * - Matrix operations optimized for neural network workloads
+ * - Common activation functions (ReLU, Softmax)
+ * - Loss functions (Cross-entropy)
+ * - Automatic differentiation for backpropagation
+ * - Model training with mini-batch gradient descent
+ * 
+ * The implementation uses a computational graph approach where operations
+ * create nodes (model_var) that track dependencies for automatic gradient
+ * computation during backpropagation.
+ * 
+ * Example usage: MNIST digit classification with a 3-layer neural network
+ */
 
 #define _CRT_SECURE_NO_WARNINGS
 
@@ -8,34 +25,186 @@
 #include "arena.c"
 #include "prng.c"
 
+/**
+ * @brief Matrix structure for row-major matrices
+ * 
+ * Represents a 2D matrix stored in row-major order, where element (i,j)
+ * is at index (i * cols + j) in the data array.
+ */
 typedef struct {
-    u32 rows, cols;
-    // Row-major
-    f32* data;
+    u32 rows, cols;  /**< Matrix dimensions */
+    f32* data;       /**< Row-major data array */
 } matrix;
 
+/**
+ * @brief Matrix structure for row-major matrices
+ * 
+ * Represents a 2D matrix stored in row-major order, where element (i,j)
+ * is at index (i * cols + j) in the data array.
+ */
+typedef struct {
+    u32 rows, cols;  /**< Matrix dimensions */
+    f32* data;       /**< Row-major data array */
+} matrix;
+
+/* Matrix operation function declarations */
+
+/**
+ * @brief Create a new matrix allocated from arena
+ * @param arena Memory arena to allocate from
+ * @param rows Number of rows
+ * @param cols Number of columns
+ * @return Pointer to newly created matrix
+ */
 matrix* mat_create(mem_arena* arena, u32 rows, u32 cols);
+
+/**
+ * @brief Load matrix data from a binary file
+ * @param arena Memory arena to allocate from
+ * @param rows Number of rows
+ * @param cols Number of columns
+ * @param filename Path to binary file containing float data
+ * @return Pointer to loaded matrix
+ */
 matrix* mat_load(mem_arena* arena, u32 rows, u32 cols, const char* filename);
+
+/**
+ * @brief Copy matrix data from src to dst
+ * @param dst Destination matrix (must match src dimensions)
+ * @param src Source matrix
+ * @return true on success, false if dimensions don't match
+ */
 b32 mat_copy(matrix* dst, matrix* src);
+
+/**
+ * @brief Zero all elements in the matrix
+ * @param mat Matrix to clear
+ */
 void mat_clear(matrix* mat);
+
+/**
+ * @brief Fill all elements with a constant value
+ * @param mat Matrix to fill
+ * @param x Value to fill with
+ */
 void mat_fill(matrix* mat, f32 x);
+
+/**
+ * @brief Fill matrix with random values in [lower, upper)
+ * @param mat Matrix to fill
+ * @param lower Lower bound (inclusive)
+ * @param upper Upper bound (exclusive)
+ */
 void mat_fill_rand(matrix* mat, f32 lower, f32 upper);
+
+/**
+ * @brief Scale all elements by a constant factor
+ * @param mat Matrix to scale
+ * @param scale Scaling factor
+ */
 void mat_scale(matrix* mat, f32 scale);
+
+/**
+ * @brief Compute sum of all elements
+ * @param mat Matrix to sum
+ * @return Sum of all matrix elements
+ */
 f32 mat_sum(matrix* mat);
+
+/**
+ * @brief Find index of maximum element
+ * @param mat Matrix to search
+ * @return Linear index of maximum element
+ */
 u32 mat_argmax(matrix* mat);
+
+/**
+ * @brief Element-wise addition: out = a + b
+ * @param out Output matrix
+ * @param a First operand
+ * @param b Second operand
+ * @return true on success, false if dimensions don't match
+ */
 b32 mat_add(matrix* out, const matrix* a, const matrix* b);
+
+/**
+ * @brief Element-wise subtraction: out = a - b
+ * @param out Output matrix
+ * @param a First operand
+ * @param b Second operand
+ * @return true on success, false if dimensions don't match
+ */
 b32 mat_sub(matrix* out, const matrix* a, const matrix* b);
+
+/**
+ * @brief Matrix multiplication with optional transpose: out = a * b
+ * @param out Output matrix
+ * @param a First operand
+ * @param b Second operand
+ * @param zero_out If true, zero out before accumulating
+ * @param transpose_a If true, use transpose of a
+ * @param transpose_b If true, use transpose of b
+ * @return true on success, false if dimensions don't match
+ */
 b32 mat_mul(
     matrix* out, const matrix* a, const matrix* b,
     b8 zero_out, b8 transpose_a, b8 transpose_b
 );
+
+/**
+ * @brief Apply ReLU activation: out[i] = max(0, in[i])
+ * @param out Output matrix
+ * @param in Input matrix
+ * @return true on success, false if dimensions don't match
+ */
 b32 mat_relu(matrix* out, const matrix* in);
+
+/**
+ * @brief Apply softmax activation: out[i] = exp(in[i]) / sum(exp(in))
+ * @param out Output matrix
+ * @param in Input matrix
+ * @return true on success, false if dimensions don't match
+ */
 b32 mat_softmax(matrix* out, const matrix* in);
+
+/**
+ * @brief Compute cross-entropy loss element-wise
+ * @param out Output matrix
+ * @param p True distribution
+ * @param q Predicted distribution
+ * @return true on success, false if dimensions don't match
+ */
 b32 mat_cross_entropy(matrix* out, const matrix* p, const matrix* q);
+
+/**
+ * @brief Add gradient contribution from ReLU backward pass
+ * @param out Accumulated gradient output
+ * @param in Input to ReLU forward pass
+ * @param grad Gradient from next layer
+ * @return true on success, false if dimensions don't match
+ */
 b32 mat_relu_add_grad(matrix* out, const matrix* in, const matrix* grad);
+
+/**
+ * @brief Add gradient contribution from softmax backward pass
+ * @param out Accumulated gradient output
+ * @param softmax_out Output from softmax forward pass
+ * @param grad Gradient from next layer
+ * @return true on success, false if dimensions don't match
+ */
 b32 mat_softmax_add_grad(
     matrix* out, const matrix* softmax_out, const matrix* grad
 );
+
+/**
+ * @brief Add gradient contributions from cross-entropy backward pass
+ * @param p_grad Gradient w.r.t. p (may be NULL)
+ * @param q_grad Gradient w.r.t. q (may be NULL)
+ * @param p True distribution
+ * @param q Predicted distribution
+ * @param grad Gradient from next layer
+ * @return true on success, false if dimensions don't match
+ */
 b32 mat_cross_entropy_add_grad(
     matrix* p_grad, matrix* q_grad,
     const matrix* p, const matrix* q, const matrix* grad
