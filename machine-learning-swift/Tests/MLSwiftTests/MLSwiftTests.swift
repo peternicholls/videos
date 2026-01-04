@@ -270,3 +270,196 @@ final class ModelTests: XCTestCase {
         XCTAssertTrue(finalLoss < initialLoss)
     }
 }
+
+// MARK: - New Feature Tests
+
+final class NewLayerTests: XCTestCase {
+    
+    func testSigmoidLayer() {
+        let layer = SigmoidLayer()
+        let input = Matrix(rows: 3, cols: 1, data: [0.0, -1.0, 1.0])
+        let output = layer.forward(input)
+        
+        // Sigmoid(0) = 0.5
+        XCTAssertEqual(output.data[0], 0.5, accuracy: 0.001)
+        // Sigmoid should be in range (0, 1)
+        XCTAssertTrue(output.data[1] > 0.0 && output.data[1] < 1.0)
+        XCTAssertTrue(output.data[2] > 0.0 && output.data[2] < 1.0)
+    }
+    
+    func testTanhLayer() {
+        let layer = TanhLayer()
+        let input = Matrix(rows: 3, cols: 1, data: [0.0, -1.0, 1.0])
+        let output = layer.forward(input)
+        
+        // Tanh(0) = 0
+        XCTAssertEqual(output.data[0], 0.0, accuracy: 0.001)
+        // Tanh should be in range (-1, 1)
+        XCTAssertTrue(output.data[1] > -1.0 && output.data[1] < 1.0)
+        XCTAssertTrue(output.data[2] > -1.0 && output.data[2] < 1.0)
+    }
+    
+    func testDropoutLayerTraining() {
+        let layer = DropoutLayer(dropoutRate: 0.5)
+        layer.training = true
+        
+        let input = Matrix(rows: 100, cols: 1, value: 1.0)
+        let output = layer.forward(input)
+        
+        // Some values should be zero (dropped out)
+        let zeroCount = output.data.filter { $0 == 0.0 }.count
+        XCTAssertTrue(zeroCount > 0, "Dropout should zero out some values")
+        
+        // Non-zero values should be scaled up
+        let nonZeroValues = output.data.filter { $0 > 0.0 }
+        if !nonZeroValues.isEmpty {
+            // With 0.5 dropout, non-zero values should be scaled by 1/(1-0.5) = 2
+            XCTAssertTrue(nonZeroValues.allSatisfy { $0 > 1.0 }, "Non-zero values should be scaled up")
+        }
+    }
+    
+    func testDropoutLayerInference() {
+        let layer = DropoutLayer(dropoutRate: 0.5)
+        layer.training = false
+        
+        let input = Matrix(rows: 100, cols: 1, value: 1.0)
+        let output = layer.forward(input)
+        
+        // During inference, all values should pass through unchanged
+        XCTAssertEqual(output.data, input.data)
+    }
+    
+    func testBatchNormLayerForward() {
+        let layer = BatchNormLayer(numFeatures: 3)
+        layer.training = true
+        
+        let input = Matrix(rows: 3, cols: 1, data: [1.0, 2.0, 3.0])
+        let output = layer.forward(input)
+        
+        // Output should have same shape as input
+        XCTAssertEqual(output.rows, 3)
+        XCTAssertEqual(output.cols, 1)
+    }
+    
+    func testBatchNormLayerInference() {
+        let layer = BatchNormLayer(numFeatures: 3)
+        layer.training = false
+        
+        let input = Matrix(rows: 3, cols: 1, data: [1.0, 2.0, 3.0])
+        let output = layer.forward(input)
+        
+        // Output should have same shape as input
+        XCTAssertEqual(output.rows, 3)
+        XCTAssertEqual(output.cols, 1)
+    }
+}
+
+final class OptimizerTests: XCTestCase {
+    
+    func testSGDOptimizer() {
+        let optimizer = SGDOptimizer()
+        var params = [Matrix(rows: 2, cols: 2, value: 1.0)]
+        let grads = [Matrix(rows: 2, cols: 2, value: 0.1)]
+        
+        optimizer.update(parameters: &params, gradients: grads, learningRate: 0.1)
+        
+        // After update: param = 1.0 - 0.1 * 0.1 = 0.99
+        XCTAssertEqual(params[0].data[0], 0.99, accuracy: 0.001)
+    }
+    
+    func testSGDMomentumOptimizer() {
+        let optimizer = SGDMomentumOptimizer(momentum: 0.9)
+        var params = [Matrix(rows: 2, cols: 2, value: 1.0)]
+        let grads = [Matrix(rows: 2, cols: 2, value: 0.1)]
+        
+        optimizer.update(parameters: &params, gradients: grads, learningRate: 0.1)
+        
+        // Parameters should be updated
+        XCTAssertNotEqual(params[0].data[0], 1.0)
+    }
+    
+    func testAdamOptimizer() {
+        let optimizer = AdamOptimizer()
+        var params = [Matrix(rows: 2, cols: 2, value: 1.0)]
+        let grads = [Matrix(rows: 2, cols: 2, value: 0.1)]
+        
+        optimizer.update(parameters: &params, gradients: grads, learningRate: 0.001)
+        
+        // Parameters should be updated
+        XCTAssertNotEqual(params[0].data[0], 1.0)
+        XCTAssertTrue(params[0].data[0] < 1.0)
+    }
+    
+    func testRMSpropOptimizer() {
+        let optimizer = RMSpropOptimizer()
+        var params = [Matrix(rows: 2, cols: 2, value: 1.0)]
+        let grads = [Matrix(rows: 2, cols: 2, value: 0.1)]
+        
+        optimizer.update(parameters: &params, gradients: grads, learningRate: 0.001)
+        
+        // Parameters should be updated
+        XCTAssertNotEqual(params[0].data[0], 1.0)
+        XCTAssertTrue(params[0].data[0] < 1.0)
+    }
+}
+
+final class SerializationTests: XCTestCase {
+    
+    func testModelSaveAndLoad() throws {
+        // Create a model
+        let model = SequentialModel()
+        model.add(DenseLayer(inputSize: 2, outputSize: 3))
+        model.add(ReLULayer())
+        model.add(DenseLayer(inputSize: 3, outputSize: 2))
+        model.add(SoftmaxLayer())
+        
+        // Save to temporary file
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("test_model.json")
+        try model.save(to: tempURL)
+        
+        // Load the model
+        let loadedModel = try SequentialModel.load(from: tempURL)
+        
+        // Test that loaded model produces same output
+        let input = Matrix(rows: 2, cols: 1, data: [0.5, 0.5])
+        let originalOutput = model.forward(input)
+        let loadedOutput = loadedModel.forward(input)
+        
+        // Outputs should be very close
+        for i in 0..<originalOutput.data.count {
+            XCTAssertEqual(originalOutput.data[i], loadedOutput.data[i], accuracy: 0.0001)
+        }
+        
+        // Clean up
+        try? FileManager.default.removeItem(at: tempURL)
+    }
+    
+    func testModelSaveWithDifferentLayers() throws {
+        // Create a model with various layer types
+        let model = SequentialModel()
+        model.add(DenseLayer(inputSize: 4, outputSize: 8))
+        model.add(SigmoidLayer())
+        model.add(DenseLayer(inputSize: 8, outputSize: 4))
+        model.add(TanhLayer())
+        
+        // Save to temporary file
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("test_model2.json")
+        try model.save(to: tempURL)
+        
+        // Load the model
+        let loadedModel = try SequentialModel.load(from: tempURL)
+        
+        // Test that loaded model produces same output
+        let input = Matrix(rows: 4, cols: 1, data: [0.1, 0.2, 0.3, 0.4])
+        let originalOutput = model.forward(input)
+        let loadedOutput = loadedModel.forward(input)
+        
+        // Outputs should be very close
+        for i in 0..<originalOutput.data.count {
+            XCTAssertEqual(originalOutput.data[i], loadedOutput.data[i], accuracy: 0.0001)
+        }
+        
+        // Clean up
+        try? FileManager.default.removeItem(at: tempURL)
+    }
+}

@@ -239,4 +239,16 @@ public class SequentialModel {
             }
         }
     }
+    
+    // MARK: - Model Serialization
+    
+    /// Get layers (for serialization)
+    internal func getLayers() -> [Layer] {
+        return layers
+    }
+    
+    /// Set layers (for deserialization)
+    internal func setLayers(_ newLayers: [Layer]) {
+        layers = newLayers
+    }
 }

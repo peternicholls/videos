@@ -189,14 +189,22 @@ All examples completed!
 ## Future Enhancements
 
 The Swift implementation is designed for easy extension:
+
+**Completed:**
+- [x] Sigmoid and Tanh activation layers
+- [x] Batch normalization
+- [x] Dropout regularization
+- [x] Advanced optimizers (Adam, RMSprop, SGD with momentum)
+- [x] Model serialization (save/load)
+
+**Still to be implemented:**
 - [ ] Convolutional layers (CNNs)
 - [ ] Recurrent layers (LSTM, GRU)
-- [ ] Batch normalization
-- [ ] Dropout regularization
-- [ ] Advanced optimizers (Adam, RMSprop)
-- [ ] Model serialization (save/load)
 - [ ] MNIST dataset loader
 - [ ] Visualization tools
+- [ ] Data augmentation utilities
+- [ ] Learning rate schedulers
+- [ ] Gradient clipping
 
 ## Conclusion
 

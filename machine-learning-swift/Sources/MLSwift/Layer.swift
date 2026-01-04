@@ -235,3 +235,335 @@ public class SoftmaxLayer: Layer {
         // No gradients to scale
     }
 }
+
+/// Sigmoid activation layer
+public class SigmoidLayer: Layer {
+    /// Cached output from forward pass
+    private var cachedOutput: Matrix?
+    
+    public init() {}
+    
+    public func forward(_ input: Matrix) -> Matrix {
+        let output = Activations.sigmoid(input)
+        cachedOutput = output
+        return output
+    }
+    
+    public func backward(_ gradOutput: Matrix) -> Matrix {
+        guard let output = cachedOutput else {
+            fatalError("Forward must be called before backward")
+        }
+        return Activations.sigmoidBackward(output: output, gradOutput: gradOutput)
+    }
+    
+    public func parameters() -> [Matrix] {
+        return []
+    }
+    
+    public func gradients() -> [Matrix] {
+        return []
+    }
+    
+    public func updateParameters(learningRate: Float) {
+        // No parameters to update
+    }
+    
+    public func scaleGradients(by scale: Float) {
+        // No gradients to scale
+    }
+}
+
+/// Tanh activation layer
+public class TanhLayer: Layer {
+    /// Cached output from forward pass
+    private var cachedOutput: Matrix?
+    
+    public init() {}
+    
+    public func forward(_ input: Matrix) -> Matrix {
+        let output = Activations.tanh(input)
+        cachedOutput = output
+        return output
+    }
+    
+    public func backward(_ gradOutput: Matrix) -> Matrix {
+        guard let output = cachedOutput else {
+            fatalError("Forward must be called before backward")
+        }
+        return Activations.tanhBackward(output: output, gradOutput: gradOutput)
+    }
+    
+    public func parameters() -> [Matrix] {
+        return []
+    }
+    
+    public func gradients() -> [Matrix] {
+        return []
+    }
+    
+    public func updateParameters(learningRate: Float) {
+        // No parameters to update
+    }
+    
+    public func scaleGradients(by scale: Float) {
+        // No gradients to scale
+    }
+}
+
+/// Dropout regularization layer
+/// Randomly sets a fraction of inputs to zero during training
+public class DropoutLayer: Layer {
+    /// Dropout probability (fraction of inputs to drop)
+    private let dropoutRate: Float
+    
+    /// Mask used during forward pass
+    private var mask: Matrix?
+    
+    /// Whether the layer is in training mode
+    public var training: Bool = true
+    
+    /// Initialize dropout layer
+    /// - Parameter dropoutRate: Fraction of inputs to drop (0.0 to 1.0)
+    public init(dropoutRate: Float = 0.5) {
+        precondition(dropoutRate >= 0.0 && dropoutRate <= 1.0,
+                    "Dropout rate must be between 0.0 and 1.0")
+        self.dropoutRate = dropoutRate
+    }
+    
+    public func forward(_ input: Matrix) -> Matrix {
+        if !training || dropoutRate == 0.0 {
+            // During inference or if dropout is disabled, pass through
+            return input
+        }
+        
+        // Create binary mask: 1 with probability (1 - dropoutRate), 0 otherwise
+        var maskData = [Float](repeating: 0.0, count: input.count)
+        for i in 0..<maskData.count {
+            maskData[i] = Float.random(in: 0..<1) > dropoutRate ? 1.0 : 0.0
+        }
+        
+        let mask = Matrix(rows: input.rows, cols: input.cols, data: maskData)
+        self.mask = mask
+        
+        // Apply mask and scale by (1 / (1 - dropoutRate)) to maintain expected value
+        var output = input
+        let scale = 1.0 / (1.0 - dropoutRate)
+        for i in 0..<output.data.count {
+            output.data[i] *= mask.data[i] * scale
+        }
+        
+        return output
+    }
+    
+    public func backward(_ gradOutput: Matrix) -> Matrix {
+        guard let mask = mask else {
+            // If no mask (inference mode), pass gradient through
+            return gradOutput
+        }
+        
+        // Apply same mask to gradients
+        var gradInput = gradOutput
+        let scale = 1.0 / (1.0 - dropoutRate)
+        for i in 0..<gradInput.data.count {
+            gradInput.data[i] *= mask.data[i] * scale
+        }
+        
+        return gradInput
+    }
+    
+    public func parameters() -> [Matrix] {
+        return []
+    }
+    
+    public func gradients() -> [Matrix] {
+        return []
+    }
+    
+    public func updateParameters(learningRate: Float) {
+        // No parameters to update
+    }
+    
+    public func scaleGradients(by scale: Float) {
+        // No gradients to scale
+    }
+}
+
+/// Batch Normalization layer
+/// Normalizes inputs across the batch dimension
+public class BatchNormLayer: Layer {
+    /// Number of features to normalize
+    private let numFeatures: Int
+    
+    /// Learnable scale parameter (gamma)
+    public var gamma: Matrix
+    
+    /// Learnable shift parameter (beta)
+    public var beta: Matrix
+    
+    /// Running mean for inference
+    private var runningMean: Matrix
+    
+    /// Running variance for inference
+    private var runningVar: Matrix
+    
+    /// Momentum for running statistics
+    private let momentum: Float
+    
+    /// Small constant for numerical stability
+    private let epsilon: Float
+    
+    /// Whether the layer is in training mode
+    public var training: Bool = true
+    
+    /// Cached values for backward pass
+    private var cachedInput: Matrix?
+    private var cachedMean: Matrix?
+    private var cachedVar: Matrix?
+    private var cachedNormalized: Matrix?
+    
+    /// Gradients
+    private var gammaGrad: Matrix
+    private var betaGrad: Matrix
+    
+    /// Initialize batch normalization layer
+    /// - Parameters:
+    ///   - numFeatures: Number of features to normalize
+    ///   - momentum: Momentum for running statistics (default 0.9)
+    ///   - epsilon: Small constant for numerical stability (default 1e-5)
+    public init(numFeatures: Int, momentum: Float = 0.9, epsilon: Float = 1e-5) {
+        self.numFeatures = numFeatures
+        self.momentum = momentum
+        self.epsilon = epsilon
+        
+        // Initialize gamma to 1, beta to 0
+        self.gamma = Matrix(rows: numFeatures, cols: 1, value: 1.0)
+        self.beta = Matrix(rows: numFeatures, cols: 1, value: 0.0)
+        
+        // Initialize running statistics
+        self.runningMean = Matrix(rows: numFeatures, cols: 1, value: 0.0)
+        self.runningVar = Matrix(rows: numFeatures, cols: 1, value: 1.0)
+        
+        // Initialize gradients
+        self.gammaGrad = Matrix(rows: numFeatures, cols: 1)
+        self.betaGrad = Matrix(rows: numFeatures, cols: 1)
+    }
+    
+    public func forward(_ input: Matrix) -> Matrix {
+        precondition(input.rows == numFeatures, "Input features must match numFeatures")
+        
+        if training {
+            // Training mode: compute batch statistics
+            cachedInput = input
+            
+            // For single sample (cols=1), use the sample itself as mean
+            let mean = Matrix(rows: numFeatures, cols: 1, value: 0.0)
+            
+            // Compute mean
+            var meanData = mean.data
+            for i in 0..<numFeatures {
+                meanData[i] = input.data[i]
+            }
+            let meanMatrix = Matrix(rows: numFeatures, cols: 1, data: meanData)
+            cachedMean = meanMatrix
+            
+            // For single sample, variance is 0, so we use epsilon
+            cachedVar = Matrix(rows: numFeatures, cols: 1, value: epsilon)
+            
+            // Normalize
+            var normalized = Matrix(rows: numFeatures, cols: 1)
+            for i in 0..<numFeatures {
+                normalized.data[i] = (input.data[i] - meanMatrix.data[i]) / sqrt(cachedVar!.data[i] + epsilon)
+            }
+            cachedNormalized = normalized
+            
+            // Scale and shift
+            var output = Matrix(rows: numFeatures, cols: 1)
+            for i in 0..<numFeatures {
+                output.data[i] = gamma.data[i] * normalized.data[i] + beta.data[i]
+            }
+            
+            // Update running statistics
+            for i in 0..<numFeatures {
+                runningMean.data[i] = momentum * runningMean.data[i] + (1.0 - momentum) * meanMatrix.data[i]
+                runningVar.data[i] = momentum * runningVar.data[i] + (1.0 - momentum) * cachedVar!.data[i]
+            }
+            
+            return output
+        } else {
+            // Inference mode: use running statistics
+            var normalized = Matrix(rows: numFeatures, cols: 1)
+            for i in 0..<numFeatures {
+                normalized.data[i] = (input.data[i] - runningMean.data[i]) / sqrt(runningVar.data[i] + epsilon)
+            }
+            
+            var output = Matrix(rows: numFeatures, cols: 1)
+            for i in 0..<numFeatures {
+                output.data[i] = gamma.data[i] * normalized.data[i] + beta.data[i]
+            }
+            
+            return output
+        }
+    }
+    
+    public func backward(_ gradOutput: Matrix) -> Matrix {
+        guard let _ = cachedInput,
+              let normalized = cachedNormalized,
+              let variance = cachedVar else {
+            fatalError("Forward must be called before backward")
+        }
+        
+        // Compute gradients w.r.t. gamma and beta
+        gammaGrad = Matrix(rows: numFeatures, cols: 1)
+        betaGrad = Matrix(rows: numFeatures, cols: 1)
+        
+        for i in 0..<numFeatures {
+            gammaGrad.data[i] = gradOutput.data[i] * normalized.data[i]
+            betaGrad.data[i] = gradOutput.data[i]
+        }
+        
+        // Compute gradient w.r.t. normalized input
+        var gradNormalized = Matrix(rows: numFeatures, cols: 1)
+        for i in 0..<numFeatures {
+            gradNormalized.data[i] = gradOutput.data[i] * gamma.data[i]
+        }
+        
+        // Compute gradient w.r.t. input
+        // For single sample, simplified gradient computation
+        var gradInput = Matrix(rows: numFeatures, cols: 1)
+        for i in 0..<numFeatures {
+            gradInput.data[i] = gradNormalized.data[i] / sqrt(variance.data[i] + epsilon)
+        }
+        
+        return gradInput
+    }
+    
+    public func parameters() -> [Matrix] {
+        return [gamma, beta]
+    }
+    
+    public func gradients() -> [Matrix] {
+        return [gammaGrad, betaGrad]
+    }
+    
+    public func updateParameters(learningRate: Float) {
+        // Scale gradients by learning rate
+        var scaledGammaGrad = gammaGrad
+        scaledGammaGrad.scale(by: learningRate)
+        
+        var scaledBetaGrad = betaGrad
+        scaledBetaGrad.scale(by: learningRate)
+        
+        // Update parameters
+        gamma = Matrix.subtract(gamma, scaledGammaGrad)
+        beta = Matrix.subtract(beta, scaledBetaGrad)
+        
+        // Zero gradients
+        gammaGrad.zero()
+        betaGrad.zero()
+    }
+    
+    public func scaleGradients(by scale: Float) {
+        gammaGrad.scale(by: scale)
+        betaGrad.scale(by: scale)
+    }
+}
