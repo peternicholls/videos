@@ -306,26 +306,40 @@ import Accelerate
 
 // Example: Using vDSP for fast vector operations
 func normalizeDataWithAccelerate(_ matrix: Matrix) -> Matrix {
-    var data = matrix.data
     var mean: Float = 0.0
     var stdDev: Float = 0.0
     
-    // Compute mean using Accelerate
-    vDSP_meanv(data, 1, &mean, vDSP_Length(data.count))
+    // Use withUnsafeBufferPointer for thread-safe access
+    matrix.data.withUnsafeBufferPointer { dataPtr in
+        // Compute mean using Accelerate
+        vDSP_meanv(dataPtr.baseAddress!, 1, &mean, vDSP_Length(dataPtr.count))
+    }
     
     // Compute standard deviation
-    var subtracted = [Float](repeating: 0.0, count: data.count)
+    var subtracted = [Float](repeating: 0.0, count: matrix.data.count)
     var negMean = -mean
-    vDSP_vsadd(data, 1, &negMean, &subtracted, 1, vDSP_Length(data.count))
+    
+    matrix.data.withUnsafeBufferPointer { dataPtr in
+        subtracted.withUnsafeMutableBufferPointer { subPtr in
+            vDSP_vsadd(dataPtr.baseAddress!, 1, &negMean, subPtr.baseAddress!, 1, vDSP_Length(dataPtr.count))
+        }
+    }
     
     var sumOfSquares: Float = 0.0
-    vDSP_svesq(subtracted, 1, &sumOfSquares, vDSP_Length(data.count))
-    stdDev = sqrt(sumOfSquares / Float(data.count))
+    subtracted.withUnsafeBufferPointer { subPtr in
+        vDSP_svesq(subPtr.baseAddress!, 1, &sumOfSquares, vDSP_Length(subPtr.count))
+    }
+    stdDev = sqrt(sumOfSquares / Float(matrix.data.count))
     
     // Normalize: (x - mean) / stdDev
-    var normalized = [Float](repeating: 0.0, count: data.count)
+    var normalized = [Float](repeating: 0.0, count: matrix.data.count)
     var invStdDev = 1.0 / stdDev
-    vDSP_vsmul(subtracted, 1, &invStdDev, &normalized, 1, vDSP_Length(data.count))
+    
+    subtracted.withUnsafeBufferPointer { subPtr in
+        normalized.withUnsafeMutableBufferPointer { normPtr in
+            vDSP_vsmul(subPtr.baseAddress!, 1, &invStdDev, normPtr.baseAddress!, 1, vDSP_Length(subPtr.count))
+        }
+    }
     
     return Matrix(rows: matrix.rows, cols: matrix.cols, data: normalized)
 }
@@ -337,18 +351,25 @@ func matrixMultiplyWithBLAS(_ a: Matrix, _ b: Matrix) -> Matrix {
     
     var result = [Float](repeating: 0.0, count: a.rows * b.cols)
     
-    // cblas_sgemm performs: C = alpha*A*B + beta*C
-    // Using row-major order (CblasRowMajor)
-    cblas_sgemm(
-        CblasRowMajor,
-        CblasNoTrans, CblasNoTrans,
-        Int32(a.rows), Int32(b.cols), Int32(a.cols),
-        1.0,  // alpha
-        a.data, Int32(a.cols),
-        b.data, Int32(b.cols),
-        0.0,  // beta
-        &result, Int32(b.cols)
-    )
+    // Use withUnsafeBufferPointer for safe memory access
+    a.data.withUnsafeBufferPointer { aPtr in
+        b.data.withUnsafeBufferPointer { bPtr in
+            result.withUnsafeMutableBufferPointer { resultPtr in
+                // cblas_sgemm performs: C = alpha*A*B + beta*C
+                // Using row-major order (CblasRowMajor)
+                cblas_sgemm(
+                    CblasRowMajor,
+                    CblasNoTrans, CblasNoTrans,
+                    Int32(a.rows), Int32(b.cols), Int32(a.cols),
+                    1.0,  // alpha
+                    aPtr.baseAddress!, Int32(a.cols),
+                    bPtr.baseAddress!, Int32(b.cols),
+                    0.0,  // beta
+                    resultPtr.baseAddress!, Int32(b.cols)
+                )
+            }
+        }
+    }
     
     return Matrix(rows: a.rows, cols: b.cols, data: result)
 }
@@ -375,10 +396,16 @@ func loadBinaryMatrix(from url: URL, rows: Int, cols: Int) throws -> Matrix {
                      userInfo: [NSLocalizedDescriptionKey: "File size doesn't match dimensions"])
     }
     
-    // Convert Data to [Float]
-    let floatArray = data.withUnsafeBytes { (ptr: UnsafeRawBufferPointer) -> [Float] in
-        let floatPtr = ptr.bindMemory(to: Float.self)
-        return Array(floatPtr)
+    // Ensure data is properly aligned for Float access
+    guard data.count % MemoryLayout<Float>.alignment == 0 else {
+        throw NSError(domain: "DataLoader", code: 2,
+                     userInfo: [NSLocalizedDescriptionKey: "Data is not properly aligned for Float access"])
+    }
+    
+    // Convert Data to [Float] using safe buffer access
+    let floatArray = data.withUnsafeBytes { (buffer: UnsafeRawBufferPointer) -> [Float] in
+        let floatBuffer = buffer.bindMemory(to: Float.self)
+        return Array(floatBuffer)
     }
     
     return Matrix(rows: rows, cols: cols, data: floatArray)
@@ -1170,7 +1197,7 @@ Still to be implemented:
 - [ ] Convolutional layers for image processing
 - [ ] Recurrent layers (LSTM, GRU) for sequence processing
 - [ ] Data augmentation utilities
-- [ ] Full CoreML model export/import
+- [ ] Full CoreML model export/import (examples provided, full implementation pending)
 - [ ] Native image format loading (JPEG, PNG)
 - [ ] Visualization tools
 - [ ] Learning rate schedulers
