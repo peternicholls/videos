@@ -177,10 +177,14 @@ extension SequentialModel {
         case let batchNorm as BatchNormLayer:
             return LayerData(
                 type: "BatchNorm",
-                config: [:],
+                config: [
+                    "numFeatures": String(batchNorm.gamma.rows)
+                ],
                 parameters: [
                     batchNorm.gamma.toData(),
-                    batchNorm.beta.toData()
+                    batchNorm.beta.toData(),
+                    batchNorm.runningMean.toData(),
+                    batchNorm.runningVar.toData()
                 ]
             )
             
@@ -223,14 +227,21 @@ extension SequentialModel {
             return DropoutLayer(dropoutRate: dropoutRate)
             
         case "BatchNorm":
-            guard layerData.parameters.count == 2 else {
-                throw SerializationError.invalidLayerData("BatchNorm layer requires 2 parameters")
+            guard layerData.parameters.count >= 2 else {
+                throw SerializationError.invalidLayerData("BatchNorm layer requires at least 2 parameters")
             }
             
             let gamma = Matrix.fromData(layerData.parameters[0])
             let layer = BatchNormLayer(numFeatures: gamma.rows)
             layer.gamma = gamma
             layer.beta = Matrix.fromData(layerData.parameters[1])
+            
+            // Load running statistics if available (for backward compatibility)
+            if layerData.parameters.count >= 4 {
+                layer.runningMean = Matrix.fromData(layerData.parameters[2])
+                layer.runningVar = Matrix.fromData(layerData.parameters[3])
+            }
+            
             return layer
             
         default:

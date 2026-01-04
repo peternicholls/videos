@@ -328,10 +328,10 @@ public class DropoutLayer: Layer {
     }
     
     /// Initialize dropout layer
-    /// - Parameter dropoutRate: Fraction of inputs to drop (0.0 to 1.0)
+    /// - Parameter dropoutRate: Fraction of inputs to drop (0.0 to < 1.0)
     public init(dropoutRate: Float = 0.5) {
-        precondition(dropoutRate >= 0.0 && dropoutRate <= 1.0,
-                    "Dropout rate must be between 0.0 and 1.0")
+        precondition(dropoutRate >= 0.0 && dropoutRate < 1.0,
+                    "Dropout rate must be between 0.0 and 1.0 (exclusive)")
         self.dropoutRate = dropoutRate
     }
     
@@ -411,10 +411,10 @@ public class BatchNormLayer: Layer {
     public var beta: Matrix
     
     /// Running mean for inference
-    private var runningMean: Matrix
+    internal var runningMean: Matrix
     
     /// Running variance for inference
-    private var runningVar: Matrix
+    internal var runningVar: Matrix
     
     /// Momentum for running statistics
     private let momentum: Float
@@ -465,37 +465,29 @@ public class BatchNormLayer: Layer {
             // Training mode: compute batch statistics
             cachedInput = input
             
-            // For single sample (cols=1), use the sample itself as mean
-            let mean = Matrix(rows: numFeatures, cols: 1, value: 0.0)
+            // Note: For single samples, batch normalization cannot compute meaningful statistics
+            // We apply only the learned affine transformation (gamma * input + beta)
+            // and update running statistics with the input values
             
-            // Compute mean
-            var meanData = mean.data
-            for i in 0..<numFeatures {
-                meanData[i] = input.data[i]
-            }
-            let meanMatrix = Matrix(rows: numFeatures, cols: 1, data: meanData)
-            cachedMean = meanMatrix
+            // Store input as "mean" for gradient computation
+            cachedMean = input
             
-            // For single sample, variance is 0, so we use epsilon
-            cachedVar = Matrix(rows: numFeatures, cols: 1, value: epsilon)
+            // Use unit variance for single sample
+            cachedVar = Matrix(rows: numFeatures, cols: 1, value: 1.0)
             
-            // Normalize
-            var normalized = Matrix(rows: numFeatures, cols: 1)
-            for i in 0..<numFeatures {
-                normalized.data[i] = (input.data[i] - meanMatrix.data[i]) / sqrt(cachedVar!.data[i] + epsilon)
-            }
-            cachedNormalized = normalized
+            // For single sample, normalized = input (no normalization can be done)
+            cachedNormalized = input
             
-            // Scale and shift
+            // Apply affine transformation: output = gamma * input + beta
             var output = Matrix(rows: numFeatures, cols: 1)
             for i in 0..<numFeatures {
-                output.data[i] = gamma.data[i] * normalized.data[i] + beta.data[i]
+                output.data[i] = gamma.data[i] * input.data[i] + beta.data[i]
             }
             
-            // Update running statistics
+            // Update running statistics with the input values
             for i in 0..<numFeatures {
-                runningMean.data[i] = momentum * runningMean.data[i] + (1.0 - momentum) * meanMatrix.data[i]
-                runningVar.data[i] = momentum * runningVar.data[i] + (1.0 - momentum) * cachedVar!.data[i]
+                runningMean.data[i] = momentum * runningMean.data[i] + (1.0 - momentum) * input.data[i]
+                runningVar.data[i] = momentum * runningVar.data[i] + (1.0 - momentum) * 1.0
             }
             
             return output

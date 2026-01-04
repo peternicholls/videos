@@ -63,15 +63,19 @@ public class SGDMomentumOptimizer: Optimizer {
             velocities = parameters.map { Matrix(rows: $0.rows, cols: $0.cols) }
         }
         
+        // Check for parameter count changes
+        precondition(velocities.count == parameters.count,
+                    "Parameter count changed. Call reset() before using with different model.")
+        
         for i in 0..<parameters.count {
-            // v = momentum * v + learning_rate * gradient
+            // Standard momentum formula: v = momentum * v + gradient
             velocities[i].scale(by: momentum)
-            var scaledGrad = gradients[i]
-            scaledGrad.scale(by: learningRate)
-            velocities[i] = Matrix.add(velocities[i], scaledGrad)
+            velocities[i] = Matrix.add(velocities[i], gradients[i])
             
-            // parameter = parameter - v
-            parameters[i] = Matrix.subtract(parameters[i], velocities[i])
+            // parameter = parameter - learning_rate * v
+            var scaledVelocity = velocities[i]
+            scaledVelocity.scale(by: learningRate)
+            parameters[i] = Matrix.subtract(parameters[i], scaledVelocity)
         }
     }
     
@@ -127,6 +131,10 @@ public class AdamOptimizer: Optimizer {
             m = parameters.map { Matrix(rows: $0.rows, cols: $0.cols) }
             v = parameters.map { Matrix(rows: $0.rows, cols: $0.cols) }
         }
+        
+        // Check for parameter count changes
+        precondition(m.count == parameters.count && v.count == parameters.count,
+                    "Parameter count changed. Call reset() before using with different model.")
         
         t += 1
         
@@ -204,6 +212,10 @@ public class RMSpropOptimizer: Optimizer {
         if cache.isEmpty {
             cache = parameters.map { Matrix(rows: $0.rows, cols: $0.cols) }
         }
+        
+        // Check for parameter count changes
+        precondition(cache.count == parameters.count,
+                    "Parameter count changed. Call reset() before using with different model.")
         
         for i in 0..<parameters.count {
             // Update cache: cache = decay * cache + (1 - decay) * gradient^2

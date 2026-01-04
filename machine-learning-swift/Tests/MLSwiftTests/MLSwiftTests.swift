@@ -339,6 +339,10 @@ final class NewLayerTests: XCTestCase {
         // Output should have same shape as input
         XCTAssertEqual(output.rows, 3)
         XCTAssertEqual(output.cols, 1)
+        
+        // Output should not be constant (would indicate the bug)
+        let allSame = output.data.allSatisfy { abs($0 - output.data[0]) < 0.0001 }
+        XCTAssertFalse(allSame, "BatchNorm output should not be constant for varying inputs")
     }
     
     func testBatchNormLayerInference() {
@@ -351,6 +355,10 @@ final class NewLayerTests: XCTestCase {
         // Output should have same shape as input
         XCTAssertEqual(output.rows, 3)
         XCTAssertEqual(output.cols, 1)
+        
+        // Output should not be constant
+        let allSame = output.data.allSatisfy { abs($0 - output.data[0]) < 0.0001 }
+        XCTAssertFalse(allSame, "BatchNorm output should not be constant for varying inputs")
     }
 }
 
@@ -372,10 +380,16 @@ final class OptimizerTests: XCTestCase {
         var params = [Matrix(rows: 2, cols: 2, value: 1.0)]
         let grads = [Matrix(rows: 2, cols: 2, value: 0.1)]
         
+        // First update
         optimizer.update(parameters: &params, gradients: grads, learningRate: 0.1)
+        let firstUpdate = params[0].data[0]
         
-        // Parameters should be updated
-        XCTAssertNotEqual(params[0].data[0], 1.0)
+        // Second update with same gradient should show momentum effect
+        optimizer.update(parameters: &params, gradients: grads, learningRate: 0.1)
+        let secondUpdate = params[0].data[0]
+        
+        // Second update should be larger due to momentum accumulation
+        XCTAssertTrue(abs(secondUpdate - firstUpdate) > abs(firstUpdate - 1.0))
     }
     
     func testAdamOptimizer() {
@@ -458,6 +472,104 @@ final class SerializationTests: XCTestCase {
         for i in 0..<originalOutput.data.count {
             XCTAssertEqual(originalOutput.data[i], loadedOutput.data[i], accuracy: 0.0001)
         }
+        
+        // Clean up
+        try? FileManager.default.removeItem(at: tempURL)
+    }
+    
+    func testBatchNormSerialization() throws {
+        // Create a model with batch normalization
+        let model = SequentialModel()
+        model.add(DenseLayer(inputSize: 4, outputSize: 8))
+        model.add(BatchNormLayer(numFeatures: 8))
+        model.add(ReLULayer())
+        model.add(DenseLayer(inputSize: 8, outputSize: 2))
+        
+        // Train for a bit to update running statistics
+        let input = Matrix(rows: 4, cols: 1, data: [0.1, 0.2, 0.3, 0.4])
+        let target = Matrix(rows: 2, cols: 1, data: [1.0, 0.0])
+        for _ in 0..<10 {
+            model.trainStep(input: input, target: target, learningRate: 0.01)
+        }
+        
+        // Set to inference mode
+        for layer in model.getLayers() {
+            if let bn = layer as? BatchNormLayer {
+                bn.training = false
+            }
+        }
+        
+        // Save to temporary file
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("test_batchnorm.json")
+        try model.save(to: tempURL)
+        
+        // Load the model
+        let loadedModel = try SequentialModel.load(from: tempURL)
+        
+        // Set loaded model to inference mode
+        for layer in loadedModel.getLayers() {
+            if let bn = layer as? BatchNormLayer {
+                bn.training = false
+            }
+        }
+        
+        // Test that outputs match in inference mode
+        let originalOutput = model.forward(input)
+        let loadedOutput = loadedModel.forward(input)
+        
+        for i in 0..<originalOutput.data.count {
+            XCTAssertEqual(originalOutput.data[i], loadedOutput.data[i], accuracy: 0.001)
+        }
+        
+        // Clean up
+        try? FileManager.default.removeItem(at: tempURL)
+    }
+    
+    func testDropoutSerialization() throws {
+        // Create a model with dropout
+        let model = SequentialModel()
+        model.add(DenseLayer(inputSize: 4, outputSize: 8))
+        model.add(DropoutLayer(dropoutRate: 0.3))
+        model.add(ReLULayer())
+        model.add(DenseLayer(inputSize: 8, outputSize: 2))
+        
+        // Save to temporary file
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("test_dropout.json")
+        try model.save(to: tempURL)
+        
+        // Load the model
+        let loadedModel = try SequentialModel.load(from: tempURL)
+        
+        // Set both to inference mode for consistent testing
+        for layer in model.getLayers() {
+            if let dropout = layer as? DropoutLayer {
+                dropout.training = false
+            }
+        }
+        for layer in loadedModel.getLayers() {
+            if let dropout = layer as? DropoutLayer {
+                dropout.training = false
+            }
+        }
+        
+        // Test that outputs match in inference mode
+        let input = Matrix(rows: 4, cols: 1, data: [0.1, 0.2, 0.3, 0.4])
+        let originalOutput = model.forward(input)
+        let loadedOutput = loadedModel.forward(input)
+        
+        for i in 0..<originalOutput.data.count {
+            XCTAssertEqual(originalOutput.data[i], loadedOutput.data[i], accuracy: 0.0001)
+        }
+        
+        // Verify dropout rate was preserved
+        var foundDropout = false
+        for layer in loadedModel.getLayers() {
+            if let dropout = layer as? DropoutLayer {
+                XCTAssertEqual(dropout.rate, 0.3, accuracy: 0.001)
+                foundDropout = true
+            }
+        }
+        XCTAssertTrue(foundDropout, "Dropout layer should be present in loaded model")
         
         // Clean up
         try? FileManager.default.removeItem(at: tempURL)
