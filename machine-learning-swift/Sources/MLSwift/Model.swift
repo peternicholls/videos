@@ -239,4 +239,11 @@ public class SequentialModel {
             }
         }
     }
+    
+    // MARK: - Model Serialization
+    
+    /// Get layers (for serialization and custom training loops)
+    public func getLayers() -> [Layer] {
+        return layers
+    }
 }

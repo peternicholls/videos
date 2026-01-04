@@ -33,8 +33,20 @@ MLSwift is a from-scratch implementation of a neural network library that levera
 
 - **Neural Network Layers**:
   - Dense (Fully Connected) layers
-  - Activation layers (ReLU, Softmax)
+  - Activation layers (ReLU, Softmax, Sigmoid, Tanh)
+  - Dropout regularization layer
+  - Batch Normalization layer
   - Automatic gradient computation
+
+- **Optimizers**:
+  - SGD (Stochastic Gradient Descent)
+  - SGD with Momentum
+  - Adam (Adaptive Moment Estimation)
+  - RMSprop
+
+- **Model Management**:
+  - Model serialization (save/load to JSON)
+  - Sequential model architecture
 
 - **Training Infrastructure**:
   - Mini-batch gradient descent
@@ -171,6 +183,98 @@ let relu_out = Activations.relu(x)  // GPU-accelerated
 let softmax_out = Activations.softmax(x)  // GPU-accelerated
 ```
 
+### Using Advanced Features
+
+```swift
+import MLSwift
+
+// Create a model with dropout and batch normalization
+let model = SequentialModel()
+model.add(DenseLayer(inputSize: 784, outputSize: 256))
+model.add(BatchNormLayer(numFeatures: 256))
+model.add(ReLULayer())
+model.add(DropoutLayer(dropoutRate: 0.5))
+model.add(DenseLayer(inputSize: 256, outputSize: 128))
+model.add(BatchNormLayer(numFeatures: 128))
+model.add(TanhLayer())
+model.add(DropoutLayer(dropoutRate: 0.3))
+model.add(DenseLayer(inputSize: 128, outputSize: 10))
+model.add(SoftmaxLayer())
+
+// Use cross-entropy loss
+model.setLoss(Loss.crossEntropy, gradient: Loss.crossEntropyBackward)
+
+// Train the model (dropout is automatically enabled during training)
+model.train(
+    trainInputs: trainData,
+    trainTargets: trainLabels,
+    testInputs: testData,
+    testTargets: testLabels,
+    epochs: 10,
+    batchSize: 32,
+    learningRate: 0.001
+)
+
+// Save the trained model
+try model.save(to: URL(fileURLWithPath: "model.json"))
+
+// Load the model later
+let loadedModel = try SequentialModel.load(from: URL(fileURLWithPath: "model.json"))
+
+// For inference, set dropout to inference mode
+if let dropoutLayer = model.getLayers().first(where: { $0 is DropoutLayer }) as? DropoutLayer {
+    dropoutLayer.training = false
+}
+if let batchNormLayer = model.getLayers().first(where: { $0 is BatchNormLayer }) as? BatchNormLayer {
+    batchNormLayer.training = false
+}
+```
+
+### Using Custom Optimizers
+
+```swift
+import MLSwift
+
+// Create optimizer instances
+let sgdOptimizer = SGDOptimizer()
+let momentumOptimizer = SGDMomentumOptimizer(momentum: 0.9)
+let adamOptimizer = AdamOptimizer(beta1: 0.9, beta2: 0.999)
+let rmspropOptimizer = RMSpropOptimizer(decay: 0.9)
+
+// Example: Custom training loop with Adam optimizer
+let model = SequentialModel()
+model.add(DenseLayer(inputSize: 10, outputSize: 20))
+model.add(ReLULayer())
+model.add(DenseLayer(inputSize: 20, outputSize: 1))
+
+let optimizer = AdamOptimizer()
+
+for epoch in 1...100 {
+    for (input, target) in zip(trainInputs, trainTargets) {
+        // Forward pass
+        let output = model.forward(input)
+        
+        // Compute loss
+        let loss = Loss.meanSquaredError(output, target)
+        
+        // Backward pass
+        let gradOutput = Loss.meanSquaredErrorBackward(output, target)
+        model.backward(gradOutput)
+        
+        // Get parameters and gradients from all layers
+        var allParams: [Matrix] = []
+        var allGrads: [Matrix] = []
+        for layer in model.getLayers() {
+            allParams.append(contentsOf: layer.parameters())
+            allGrads.append(contentsOf: layer.gradients())
+        }
+        
+        // Update using optimizer
+        optimizer.update(parameters: &allParams, gradients: allGrads, learningRate: 0.001)
+    }
+}
+```
+
 ## Architecture
 
 ### Matrix Storage
@@ -266,15 +370,21 @@ This library is a modernized Swift conversion of the original C implementation w
 
 ## Future Enhancements
 
+Completed features:
+- [x] Sigmoid and Tanh activation layers
+- [x] Batch normalization
+- [x] Dropout regularization
+- [x] Advanced optimizers (Adam, RMSprop, SGD with momentum)
+- [x] Model serialization (save/load)
+
+Still to be implemented:
 - [ ] Convolutional layers for image processing
 - [ ] Recurrent layers (LSTM, GRU) for sequence processing
-- [ ] Batch normalization
-- [ ] Dropout regularization
-- [ ] Optimizers (Adam, RMSprop, SGD with momentum)
 - [ ] Data augmentation utilities
-- [ ] Model serialization (save/load)
 - [ ] MNIST dataset loader
 - [ ] Visualization tools
+- [ ] Learning rate schedulers
+- [ ] Gradient clipping
 
 ## Contributing
 

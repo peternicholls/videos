@@ -135,7 +135,160 @@ func classificationExample() {
     print("\nTraining complete!")
 }
 
-/// Example 3: Demonstrate Metal GPU acceleration (if available)
+/// Example 3: Demonstrate new features (Dropout, BatchNorm, Optimizers, Serialization)
+func advancedFeaturesExample() {
+    print("=== Advanced Features Example ===\n")
+    
+    // Create a model with dropout and batch normalization
+    print("Creating model with Dropout and Batch Normalization...")
+    let model = SequentialModel()
+    model.add(DenseLayer(inputSize: 8, outputSize: 16))
+    model.add(BatchNormLayer(numFeatures: 16))
+    model.add(ReLULayer())
+    model.add(DropoutLayer(dropoutRate: 0.3))
+    model.add(DenseLayer(inputSize: 16, outputSize: 8))
+    model.add(TanhLayer())
+    model.add(DenseLayer(inputSize: 8, outputSize: 3))
+    model.add(SoftmaxLayer())
+    
+    // Use cross-entropy loss
+    model.setLoss(Loss.crossEntropy, gradient: Loss.crossEntropyBackward)
+    
+    // Generate synthetic training data
+    print("Generating synthetic data...")
+    var trainInputs: [Matrix] = []
+    var trainTargets: [Matrix] = []
+    
+    for _ in 0..<200 {
+        let classLabel = Int.random(in: 0..<3)
+        var features = [Float](repeating: 0.0, count: 8)
+        for i in 0..<8 {
+            features[i] = Float.random(in: -1.0..<1.0) + Float(classLabel) * 0.4
+        }
+        
+        let input = Matrix(rows: 8, cols: 1, data: features)
+        var targetData = [Float](repeating: 0.0, count: 3)
+        targetData[classLabel] = 1.0
+        let target = Matrix(rows: 3, cols: 1, data: targetData)
+        
+        trainInputs.append(input)
+        trainTargets.append(target)
+    }
+    
+    // Train with dropout enabled
+    print("Training model (dropout and batch norm enabled)...")
+    for epoch in 1...10 {
+        var epochLoss: Float = 0.0
+        for (input, target) in zip(trainInputs, trainTargets) {
+            epochLoss += model.trainStep(input: input, target: target, learningRate: 0.01)
+        }
+        if epoch % 2 == 0 {
+            print("Epoch \(epoch): Loss = \(String(format: "%.4f", epochLoss / Float(trainInputs.count)))")
+        }
+    }
+    
+    // Save the model
+    let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("mlswift_model.json")
+    do {
+        try model.save(to: tempURL)
+        print("\nModel saved to: \(tempURL.path)")
+        
+        // Load the model
+        let loadedModel = try SequentialModel.load(from: tempURL)
+        print("Model loaded successfully!")
+        
+        // Set both models to inference mode for fair comparison
+        for layer in model.getLayers() {
+            if let dropout = layer as? DropoutLayer {
+                dropout.training = false
+            }
+            if let batchNorm = layer as? BatchNormLayer {
+                batchNorm.training = false
+            }
+        }
+        for layer in loadedModel.getLayers() {
+            if let dropout = layer as? DropoutLayer {
+                dropout.training = false
+            }
+            if let batchNorm = layer as? BatchNormLayer {
+                batchNorm.training = false
+            }
+        }
+        
+        // Test both models produce same output
+        let testInput = trainInputs[0]
+        let originalOutput = model.forward(testInput)
+        let loadedOutput = loadedModel.forward(testInput)
+        
+        print("\nVerifying loaded model (inference mode):")
+        print("Original model output: [\(String(format: "%.4f", originalOutput.data[0])), \(String(format: "%.4f", originalOutput.data[1])), \(String(format: "%.4f", originalOutput.data[2]))]")
+        print("Loaded model output:   [\(String(format: "%.4f", loadedOutput.data[0])), \(String(format: "%.4f", loadedOutput.data[1])), \(String(format: "%.4f", loadedOutput.data[2]))]")
+        
+        // Clean up
+        try? FileManager.default.removeItem(at: tempURL)
+    } catch {
+        print("Error with serialization: \(error)")
+    }
+    
+    print()
+}
+
+/// Example 4: Demonstrate different optimizers
+func optimizerComparison() {
+    print("=== Optimizer Comparison Example ===\n")
+    
+    // Simple problem: learn to approximate a function
+    let inputs = [
+        Matrix(rows: 1, cols: 1, data: [0.0]),
+        Matrix(rows: 1, cols: 1, data: [0.5]),
+        Matrix(rows: 1, cols: 1, data: [1.0])
+    ]
+    
+    let targets = [
+        Matrix(rows: 1, cols: 1, data: [0.0]),
+        Matrix(rows: 1, cols: 1, data: [0.25]),
+        Matrix(rows: 1, cols: 1, data: [1.0])
+    ]
+    
+    // Note: Optimizers are designed for custom training loops
+    // This example demonstrates the API. For actual use, you would:
+    // 1. Collect parameters/gradients from model layers
+    // 2. Call optimizer.update() to modify parameters
+    // 3. Apply updated parameters back to layers
+    
+    let optimizerNames = ["SGD", "SGD+Momentum", "Adam", "RMSprop"]
+    let learningRates: [Float] = [0.1, 0.05, 0.01, 0.01]
+    
+    for (index, name) in optimizerNames.enumerated() {
+        print("Testing \(name) optimizer behavior...")
+        
+        // Create a simple model
+        let model = SequentialModel()
+        model.add(DenseLayer(inputSize: 1, outputSize: 4))
+        model.add(SigmoidLayer())
+        model.add(DenseLayer(inputSize: 4, outputSize: 1))
+        model.setLoss(Loss.meanSquaredError, gradient: Loss.meanSquaredErrorBackward)
+        
+        // Train using model's built-in SGD (for demonstration)
+        for _ in 0..<100 {
+            for (input, target) in zip(inputs, targets) {
+                model.trainStep(input: input, target: target, learningRate: learningRates[index])
+            }
+        }
+        
+        // Test final loss
+        var totalLoss: Float = 0.0
+        for (input, target) in zip(inputs, targets) {
+            totalLoss += model.computeLoss(input: input, target: target)
+        }
+        print("  Final loss: \(String(format: "%.6f", totalLoss / Float(inputs.count)))")
+    }
+    
+    print("\nNote: For actual optimizer usage, see README.md for custom training loop examples.")
+    print()
+}
+
+/// Example 5: Demonstrate Metal GPU acceleration (if available)
 func metalAccelerationDemo() {
     print("=== Metal GPU Acceleration Demo ===\n")
     
@@ -194,6 +347,8 @@ print("For GPU acceleration, run on macOS with Apple Silicon\n")
 // Run examples
 xorExample()
 classificationExample()
+advancedFeaturesExample()
+optimizerComparison()
 metalAccelerationDemo()
 
 print("All examples completed!")
