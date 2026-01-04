@@ -718,6 +718,348 @@ The Swift implementation provides similar functionality to the Python `mnist.py`
 
 The main difference is that Swift provides type safety and can leverage Apple's frameworks (Accelerate, CoreML) for better integration with the Apple ecosystem.
 
+## Model Persistence: Saving and Loading Trained Models
+
+MLSwift provides comprehensive model serialization capabilities, allowing you to save trained models to disk and load them later for inference or continued training.
+
+### Saving a Trained Model
+
+After training your model, you can save it to a JSON file:
+
+```swift
+import MLSwift
+import Foundation
+
+// Create and train a model
+let model = SequentialModel()
+model.add(DenseLayer(inputSize: 784, outputSize: 128))
+model.add(ReLULayer())
+model.add(DenseLayer(inputSize: 128, outputSize: 64))
+model.add(ReLULayer())
+model.add(DenseLayer(inputSize: 64, outputSize: 10))
+model.add(SoftmaxLayer())
+
+model.setLoss(Loss.crossEntropy, gradient: Loss.crossEntropyBackward)
+
+// Train the model (example with synthetic data)
+// ... training code here ...
+
+// Save the trained model
+let modelURL = URL(fileURLWithPath: "trained_model.json")
+do {
+    try model.save(to: modelURL)
+    print("Model saved successfully to: \(modelURL.path)")
+} catch {
+    print("Error saving model: \(error)")
+}
+```
+
+### Loading a Saved Model
+
+Load a previously saved model for inference or continued training:
+
+```swift
+import MLSwift
+import Foundation
+
+// Load the model from disk
+let modelURL = URL(fileURLWithPath: "trained_model.json")
+
+do {
+    let model = try SequentialModel.load(from: modelURL)
+    print("Model loaded successfully!")
+    
+    // The model is ready to use for inference
+    let testInput = Matrix(rows: 784, cols: 1, randomInRange: 0.0, 1.0)
+    let prediction = model.forward(testInput)
+    print("Prediction: \(prediction)")
+    
+} catch {
+    print("Error loading model: \(error)")
+}
+```
+
+### Using a Loaded Model for Inference
+
+When using a loaded model for inference, remember to set dropout and batch normalization layers to inference mode:
+
+```swift
+import MLSwift
+
+// Load the model
+let model = try SequentialModel.load(from: URL(fileURLWithPath: "model.json"))
+
+// Set all layers to inference mode
+for layer in model.getLayers() {
+    if let dropout = layer as? DropoutLayer {
+        dropout.training = false  // Disable dropout during inference
+    }
+    if let batchNorm = layer as? BatchNormLayer {
+        batchNorm.training = false  // Use running statistics for batch norm
+    }
+}
+
+// Now make predictions
+let input = Matrix(rows: 784, cols: 1, data: imageData)
+let output = model.forward(input)
+
+// Get the predicted class (for classification)
+let predictedClass = output.data.enumerated().max(by: { $0.1 < $1.1 })?.offset ?? 0
+print("Predicted class: \(predictedClass)")
+```
+
+### Complete Example: Train, Save, Load, and Use
+
+Here's a complete workflow demonstrating the full lifecycle:
+
+```swift
+import MLSwift
+import Foundation
+
+func trainSaveLoadExample() {
+    print("=== Complete Model Lifecycle Example ===\n")
+    
+    // STEP 1: Create and train a model
+    print("Step 1: Creating and training model...")
+    let model = SequentialModel()
+    model.add(DenseLayer(inputSize: 10, outputSize: 16))
+    model.add(ReLULayer())
+    model.add(DropoutLayer(dropoutRate: 0.3))
+    model.add(DenseLayer(inputSize: 16, outputSize: 3))
+    model.add(SoftmaxLayer())
+    
+    model.setLoss(Loss.crossEntropy, gradient: Loss.crossEntropyBackward)
+    
+    // Generate training data
+    var trainInputs: [Matrix] = []
+    var trainTargets: [Matrix] = []
+    
+    for _ in 0..<200 {
+        let classLabel = Int.random(in: 0..<3)
+        let features = [Float](repeating: 0, count: 10).map { _ in 
+            Float.random(in: -1.0...1.0) + Float(classLabel) * 0.5
+        }
+        trainInputs.append(Matrix(rows: 10, cols: 1, data: features))
+        
+        var oneHot = [Float](repeating: 0.0, count: 3)
+        oneHot[classLabel] = 1.0
+        trainTargets.append(Matrix(rows: 3, cols: 1, data: oneHot))
+    }
+    
+    // Train for a few epochs
+    for epoch in 1...5 {
+        var totalLoss: Float = 0.0
+        for (input, target) in zip(trainInputs, trainTargets) {
+            totalLoss += model.trainStep(input: input, target: target, learningRate: 0.01)
+        }
+        print("Epoch \(epoch): Loss = \(String(format: "%.4f", totalLoss / Float(trainInputs.count)))")
+    }
+    
+    // STEP 2: Save the trained model
+    print("\nStep 2: Saving trained model...")
+    let saveURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent("my_trained_model.json")
+    
+    do {
+        try model.save(to: saveURL)
+        print("Model saved to: \(saveURL.path)")
+        
+        // Check file size
+        let attributes = try FileManager.default.attributesOfItem(atPath: saveURL.path)
+        if let fileSize = attributes[.size] as? Int {
+            print("Model file size: \(fileSize) bytes")
+        }
+    } catch {
+        print("Error saving model: \(error)")
+        return
+    }
+    
+    // STEP 3: Load the model from disk
+    print("\nStep 3: Loading model from disk...")
+    let loadedModel: SequentialModel
+    do {
+        loadedModel = try SequentialModel.load(from: saveURL)
+        print("Model loaded successfully!")
+        print("Model has \(loadedModel.getLayers().count) layers")
+    } catch {
+        print("Error loading model: \(error)")
+        return
+    }
+    
+    // STEP 4: Set to inference mode
+    print("\nStep 4: Setting model to inference mode...")
+    for layer in loadedModel.getLayers() {
+        if let dropout = layer as? DropoutLayer {
+            dropout.training = false
+            print("  - Dropout layer set to inference mode")
+        }
+        if let batchNorm = layer as? BatchNormLayer {
+            batchNorm.training = false
+            print("  - BatchNorm layer set to inference mode")
+        }
+    }
+    
+    // STEP 5: Use loaded model for inference
+    print("\nStep 5: Using loaded model for predictions...")
+    let testInput = trainInputs[0]
+    let prediction = loadedModel.forward(testInput)
+    
+    print("Test input: \(testInput.data.prefix(5))...")
+    print("Prediction probabilities:")
+    for i in 0..<prediction.data.count {
+        print("  Class \(i): \(String(format: "%.4f", prediction.data[i]))")
+    }
+    
+    let predictedClass = prediction.data.enumerated().max(by: { $0.1 < $1.1 })?.offset ?? 0
+    print("Predicted class: \(predictedClass)")
+    
+    // STEP 6: Verify original and loaded models produce same output
+    print("\nStep 6: Verifying model integrity...")
+    
+    // Set original model to inference mode too
+    for layer in model.getLayers() {
+        if let dropout = layer as? DropoutLayer {
+            dropout.training = false
+        }
+        if let batchNorm = layer as? BatchNormLayer {
+            batchNorm.training = false
+        }
+    }
+    
+    let originalOutput = model.forward(testInput)
+    let loadedOutput = loadedModel.forward(testInput)
+    
+    var maxDifference: Float = 0.0
+    for i in 0..<originalOutput.data.count {
+        let diff = abs(originalOutput.data[i] - loadedOutput.data[i])
+        maxDifference = max(maxDifference, diff)
+    }
+    
+    print("Max difference between original and loaded model: \(String(format: "%.10f", maxDifference))")
+    if maxDifference < 0.0001 {
+        print("✓ Models match! Serialization successful.")
+    } else {
+        print("⚠ Models differ slightly (this may be normal for floating-point operations)")
+    }
+    
+    // Clean up
+    try? FileManager.default.removeItem(at: saveURL)
+    print("\nExample complete!")
+}
+```
+
+### Model File Format
+
+Models are saved in JSON format with the following structure:
+
+```json
+{
+  "version": "1.0",
+  "savedDate": "2024-01-01T12:00:00Z",
+  "metadata": {
+    "framework": "MLSwift",
+    "platform": "macOS"
+  },
+  "architecture": [
+    {
+      "type": "Dense",
+      "config": {
+        "inputSize": "784",
+        "outputSize": "128"
+      },
+      "parameters": [
+        {
+          "rows": 128,
+          "cols": 784,
+          "data": [0.123, 0.456, ...]
+        },
+        {
+          "rows": 128,
+          "cols": 1,
+          "data": [0.0, 0.0, ...]
+        }
+      ]
+    },
+    {
+      "type": "ReLU",
+      "config": {},
+      "parameters": []
+    }
+  ]
+}
+```
+
+### Best Practices for Model Persistence
+
+1. **Version Control**: The model file includes version information. Keep track of which model version works with which code version.
+
+2. **Inference Mode**: Always set dropout and batch normalization layers to inference mode when loading a model for prediction:
+   ```swift
+   for layer in model.getLayers() {
+       if let dropout = layer as? DropoutLayer { dropout.training = false }
+       if let batchNorm = layer as? BatchNormLayer { batchNorm.training = false }
+   }
+   ```
+
+3. **Error Handling**: Always use proper error handling when saving/loading models:
+   ```swift
+   do {
+       try model.save(to: url)
+   } catch SerializationError.unsupportedLayerType(let type) {
+       print("Layer type \(type) is not supported for serialization")
+   } catch {
+       print("Unexpected error: \(error)")
+   }
+   ```
+
+4. **File Paths**: Use absolute paths or proper URL handling to avoid file not found errors:
+   ```swift
+   let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+   let modelURL = documentsURL.appendingPathComponent("models/my_model.json")
+   ```
+
+5. **Checkpointing**: Save model checkpoints during training to prevent data loss:
+   ```swift
+   if epoch % 10 == 0 {
+       let checkpointURL = URL(fileURLWithPath: "checkpoint_epoch_\(epoch).json")
+       try? model.save(to: checkpointURL)
+   }
+   ```
+
+6. **Model Validation**: After loading, verify the model works correctly with test data before deploying to production.
+
+### Continuing Training with a Loaded Model
+
+You can load a saved model and continue training it:
+
+```swift
+// Load a previously trained model
+let model = try SequentialModel.load(from: URL(fileURLWithPath: "model.json"))
+
+// Set loss function (not persisted with the model)
+model.setLoss(Loss.crossEntropy, gradient: Loss.crossEntropyBackward)
+
+// Ensure training mode is enabled
+for layer in model.getLayers() {
+    if let dropout = layer as? DropoutLayer {
+        dropout.training = true  // Enable dropout during training
+    }
+    if let batchNorm = layer as? BatchNormLayer {
+        batchNorm.training = true  // Update running statistics
+    }
+}
+
+// Continue training with new data
+for epoch in 1...10 {
+    for (input, target) in zip(newTrainInputs, newTrainTargets) {
+        model.trainStep(input: input, target: target, learningRate: 0.001)
+    }
+}
+
+// Save the fine-tuned model
+try model.save(to: URL(fileURLWithPath: "model_finetuned.json"))
+```
+
 ## Architecture
 
 ### Matrix Storage
