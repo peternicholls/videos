@@ -305,7 +305,7 @@ import MLSwift
 import Accelerate
 
 // Example: Using vDSP for fast vector operations
-func normalizeDataWithAccelerate(_ matrix: Matrix) -> Matrix {
+func normalizeDataWithAccelerate(_ matrix: Matrix) -> (normalized: Matrix, mean: Float, stdDev: Float) {
     var mean: Float = 0.0
     var stdDev: Float = 0.0
     
@@ -333,6 +333,12 @@ func normalizeDataWithAccelerate(_ matrix: Matrix) -> Matrix {
     
     // Normalize: (x - mean) / stdDev
     var normalized = [Float](repeating: 0.0, count: matrix.data.count)
+    
+    // Guard against division by zero
+    guard stdDev > 0 else {
+        return (matrix, mean, 0)
+    }
+    
     var invStdDev = 1.0 / stdDev
     
     subtracted.withUnsafeBufferPointer { subPtr in
@@ -341,13 +347,15 @@ func normalizeDataWithAccelerate(_ matrix: Matrix) -> Matrix {
         }
     }
     
-    return Matrix(rows: matrix.rows, cols: matrix.cols, data: normalized)
+    return (Matrix(rows: matrix.rows, cols: matrix.cols, data: normalized), mean, stdDev)
 }
 
 // Example: Matrix operations with BLAS (part of Accelerate)
-func matrixMultiplyWithBLAS(_ a: Matrix, _ b: Matrix) -> Matrix {
-    // Ensure compatible dimensions
-    assert(a.cols == b.rows)
+func matrixMultiplyWithBLAS(_ a: Matrix, _ b: Matrix) -> Matrix? {
+    // Ensure compatible dimensions (checked in both debug and release)
+    guard a.cols == b.rows else {
+        return nil
+    }
     
     var result = [Float](repeating: 0.0, count: a.rows * b.cols)
     
@@ -373,6 +381,7 @@ func matrixMultiplyWithBLAS(_ a: Matrix, _ b: Matrix) -> Matrix {
     
     return Matrix(rows: a.rows, cols: b.cols, data: result)
 }
+```
 ```
 
 ### Dataset Import and Preparation

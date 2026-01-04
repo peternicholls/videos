@@ -27,16 +27,37 @@ final class DataPreprocessingTests: XCTestCase {
         XCTAssertEqual(normalized[0, 1], 1.0/3.0, accuracy: 0.001)
     }
     
+    func testMinMaxNormalizeWithConstantValues() {
+        // Test edge case: all values are identical
+        let matrix = Matrix(rows: 2, cols: 2, data: [5.0, 5.0, 5.0, 5.0])
+        let normalized = minMaxNormalize(matrix)
+        
+        // Should return original matrix when range is 0
+        XCTAssertEqual(normalized[0, 0], 5.0, accuracy: 0.001)
+        XCTAssertEqual(normalized[1, 1], 5.0, accuracy: 0.001)
+    }
+    
     func testStandardize() {
         let matrix = Matrix(rows: 2, cols: 2, data: [1, 2, 3, 4])
-        let (normalized, mean, stdDev) = standardize(matrix)
+        let (standardized, mean, stdDev) = standardize(matrix)
         
         XCTAssertEqual(mean, 2.5, accuracy: 0.001)
         XCTAssertGreaterThan(stdDev, 0)
         
         // Check that standardized data has approximately zero mean
-        let normalizedMean = normalized.data.reduce(0, +) / Float(normalized.data.count)
-        XCTAssertEqual(normalizedMean, 0.0, accuracy: 0.001)
+        let standardizedMean = standardized.data.reduce(0, +) / Float(standardized.data.count)
+        XCTAssertEqual(standardizedMean, 0.0, accuracy: 0.001)
+    }
+    
+    func testStandardizeWithConstantValues() {
+        // Test edge case: all values are identical (zero std dev)
+        let matrix = Matrix(rows: 2, cols: 2, data: [3.0, 3.0, 3.0, 3.0])
+        let (standardized, mean, stdDev) = standardize(matrix)
+        
+        XCTAssertEqual(mean, 3.0, accuracy: 0.001)
+        XCTAssertEqual(stdDev, 0.0, accuracy: 0.001)
+        // Should return original matrix when stdDev is 0
+        XCTAssertEqual(standardized[0, 0], 3.0, accuracy: 0.001)
     }
     
     // MARK: - Label Encoding Tests
@@ -50,6 +71,19 @@ final class DataPreprocessingTests: XCTestCase {
         XCTAssertEqual(encoded[0][1, 0], 0.0)
         XCTAssertEqual(encoded[1][1, 0], 1.0)
         XCTAssertEqual(encoded[2][2, 0], 1.0)
+    }
+    
+    func testOneHotEncodeWithOutOfBoundsLabels() {
+        // Test edge case: labels out of bounds
+        let labels = [-1, 5, 1]  // -1 and 5 are out of bounds for 3 classes
+        let encoded = oneHotEncode(labels: labels, numClasses: 3)
+        
+        XCTAssertEqual(encoded.count, 3)
+        // Out of bounds labels should produce zero vectors
+        XCTAssertEqual(encoded[0].data.reduce(0, +), 0.0, accuracy: 0.001)
+        XCTAssertEqual(encoded[1].data.reduce(0, +), 0.0, accuracy: 0.001)
+        // Valid label should work normally
+        XCTAssertEqual(encoded[2][1, 0], 1.0)
     }
     
     func testOneHotDecode() {

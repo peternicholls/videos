@@ -178,7 +178,7 @@ func dataFileOperationsExample() {
         // Load them back
         print("\nStep 2: Loading data from binary files...")
         let loadedImages = try loadBinaryMatrix(from: imagesURL, rows: 10, cols: 784)
-        let loadedLabels = try loadBinaryMatrix(from: imagesURL, rows: 10, cols: 1)
+        let loadedLabels = try loadBinaryMatrix(from: labelsURL, rows: 10, cols: 1)
         
         print("✓ Images loaded: \(loadedImages.rows) samples, \(loadedImages.cols) features")
         print("✓ Labels loaded: \(loadedLabels.rows) samples")

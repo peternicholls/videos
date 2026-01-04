@@ -40,7 +40,7 @@ public func minMaxNormalize(_ matrix: Matrix) -> Matrix {
 /// Standardize data (zero mean, unit variance)
 /// - Parameter matrix: Matrix to standardize
 /// - Returns: Tuple of (standardized matrix, mean, standard deviation)
-public func standardize(_ matrix: Matrix) -> (normalized: Matrix, mean: Float, stdDev: Float) {
+public func standardize(_ matrix: Matrix) -> (standardized: Matrix, mean: Float, stdDev: Float) {
     let count = Float(matrix.data.count)
     let mean = matrix.data.reduce(0, +) / count
     
@@ -81,6 +81,10 @@ public func oneHotEncode(labels: [Int], numClasses: Int) -> [Matrix] {
 /// - Returns: Array of integer labels
 public func oneHotDecode(_ encoded: [Matrix]) -> [Int] {
     return encoded.map { matrix in
+        guard !matrix.data.isEmpty else {
+            return 0
+        }
+        
         var maxIndex = 0
         var maxValue = matrix.data[0]
         
@@ -107,7 +111,7 @@ public func trainValidationSplit<T>(data: [T], splitRatio: Float = 0.8) -> (trai
         return (data, [])
     }
     
-    let trainCount = Int(Float(data.count) * splitRatio)
+    let trainCount = Int(Double(data.count) * Double(splitRatio))
     let trainData = Array(data[..<trainCount])
     let validationData = Array(data[trainCount...])
     
@@ -179,6 +183,8 @@ public func flattenImages(_ images: [Matrix]) -> [Matrix] {
 /// - Returns: Array of 2D image matrices
 public func reshapeToImages(_ flattened: [Matrix], height: Int, width: Int) -> [Matrix] {
     return flattened.map { flat in
-        Matrix(rows: height, cols: width, data: flat.data)
+        precondition(flat.data.count == height * width, 
+                    "reshapeToImages: flattened data count (\(flat.data.count)) does not match expected image size (\(height) x \(width))")
+        return Matrix(rows: height, cols: width, data: flat.data)
     }
 }

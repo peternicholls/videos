@@ -44,11 +44,6 @@ public func loadBinaryMatrix(from url: URL, rows: Int, cols: Int) throws -> Matr
         )
     }
     
-    // Ensure data is properly aligned for Float access
-    guard data.count % MemoryLayout<Float>.alignment == 0 else {
-        throw DataLoaderError.invalidAlignment
-    }
-    
     // Convert Data to [Float] using safe buffer access
     let floatArray = data.withUnsafeBytes { (buffer: UnsafeRawBufferPointer) -> [Float] in
         let floatBuffer = buffer.bindMemory(to: Float.self)
@@ -71,13 +66,11 @@ public func saveBinaryMatrix(_ matrix: Matrix, to url: URL) throws {
 /// Load multiple matrices from a directory
 /// - Parameters:
 ///   - directory: Directory containing binary matrix files
-///   - pattern: File name pattern (e.g., "*.mat")
 ///   - rows: Number of rows per matrix
 ///   - cols: Number of columns per matrix
 /// - Returns: Array of loaded matrices
 public func loadMatricesFromDirectory(
     _ directory: URL,
-    pattern: String = "*.mat",
     rows: Int,
     cols: Int
 ) throws -> [Matrix] {
