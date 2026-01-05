@@ -1,14 +1,15 @@
 # Part 7: Roadmap & Future Features
 
-This part covers planned features, known limitations, and how to contribute to MLSwift.
+This part covers the current status of MLSwift features, remaining planned features, known limitations, and how to contribute.
 
 ## Table of Contents
 
 1. [Current Status](#current-status)
-2. [Planned Features](#planned-features)
-3. [Known Limitations](#known-limitations)
-4. [Contributing](#contributing)
-5. [Resources](#resources)
+2. [Recently Implemented Features](#recently-implemented-features)
+3. [Planned Features](#planned-features)
+4. [Known Limitations](#known-limitations)
+5. [Contributing](#contributing)
+6. [Resources](#resources)
 
 ---
 
@@ -16,7 +17,7 @@ This part covers planned features, known limitations, and how to contribute to M
 
 ### Implemented Features ✅
 
-MLSwift currently provides a solid foundation for neural network development:
+MLSwift now provides comprehensive neural network development capabilities:
 
 | Category | Feature | Status |
 |----------|---------|--------|
@@ -24,6 +25,13 @@ MLSwift currently provides a solid foundation for neural network development:
 | | Matrix operations (GPU/Metal) | ✅ Complete |
 | | Automatic differentiation | ✅ Complete |
 | **Layers** | Dense (Fully Connected) | ✅ Complete |
+| | Conv2D (2D Convolution) | ✅ Complete |
+| | MaxPool2D (Max Pooling) | ✅ Complete |
+| | AvgPool2D (Average Pooling) | ✅ Complete |
+| | Flatten | ✅ Complete |
+| | LSTM (Long Short-Term Memory) | ✅ Complete |
+| | GRU (Gated Recurrent Unit) | ✅ Complete |
+| | Embedding | ✅ Complete |
 | | ReLU Activation | ✅ Complete |
 | | Softmax Activation | ✅ Complete |
 | | Sigmoid Activation | ✅ Complete |
@@ -39,22 +47,29 @@ MLSwift currently provides a solid foundation for neural network development:
 | | RMSprop | ✅ Complete |
 | **Training** | Mini-batch training | ✅ Complete |
 | | Model serialization | ✅ Complete |
+| | Learning rate schedulers | ✅ Complete |
+| | Gradient clipping | ✅ Complete |
+| | Training history/logging | ✅ Complete |
 | **Data** | Binary file loading | ✅ Complete |
+| | Image loading (JPEG, PNG) | ✅ Complete |
+| | Data augmentation | ✅ Complete |
 | | Normalization | ✅ Complete |
 | | One-hot encoding | ✅ Complete |
+| **Visualization** | Model summary | ✅ Complete |
+| | Confusion matrix | ✅ Complete |
+| | Training metrics | ✅ Complete |
+| **Export** | JSON serialization | ✅ Complete |
+| | CoreML export | ✅ Complete |
 | **Integration** | Metal GPU acceleration | ✅ Complete |
 | | Accelerate framework | ✅ Complete |
 
-## Planned Features
+## Recently Implemented Features
 
 ### Convolutional Layers for Image Processing
 
-**Priority: High**
-
-Convolutional Neural Networks (CNNs) are essential for image tasks.
+CNNs are now fully implemented for image classification tasks:
 
 ```swift
-// Planned API
 let model = SequentialModel()
 model.add(Conv2DLayer(
     inputChannels: 1,
@@ -72,22 +87,11 @@ model.add(DenseLayer(inputSize: 64 * 7 * 7, outputSize: 10))
 model.add(SoftmaxLayer())
 ```
 
-**Implementation tasks**:
-- [ ] 2D convolution forward pass (CPU)
-- [ ] 2D convolution backward pass
-- [ ] Metal compute shaders for convolution
-- [ ] Pooling layers (Max, Average)
-- [ ] Padding modes (valid, same)
-- [ ] Transposed convolution (for upsampling)
-
 ### Recurrent Layers (LSTM, GRU) for Sequence Processing
 
-**Priority: High**
-
-Recurrent layers enable processing sequences like text and time series.
+RNNs for processing sequences like text and time series:
 
 ```swift
-// Planned API
 let model = SequentialModel()
 model.add(EmbeddingLayer(vocabSize: 10000, embeddingDim: 128))
 model.add(LSTMLayer(inputSize: 128, hiddenSize: 256, returnSequences: false))
@@ -96,187 +100,181 @@ model.add(DenseLayer(inputSize: 256, outputSize: 3))
 model.add(SoftmaxLayer())
 ```
 
-**Implementation tasks**:
-- [ ] LSTM cell forward/backward
-- [ ] GRU cell forward/backward
-- [ ] Bidirectional wrapper
-- [ ] Sequence padding/masking
-- [ ] Metal acceleration for RNN cells
-
 ### Data Augmentation Utilities
 
-**Priority: Medium**
-
-Data augmentation improves model generalization for image tasks.
+Comprehensive image augmentation for better generalization:
 
 ```swift
-// Planned API
 let augmentation = DataAugmentation()
-    .randomFlip(horizontal: true)
+    .randomHorizontalFlip(probability: 0.5)
     .randomRotation(maxDegrees: 15)
     .randomZoom(range: 0.1)
     .randomBrightness(range: 0.2)
     .randomNoise(stdDev: 0.01)
+    .normalize(mean: [0.5], std: [0.5])
 
-let augmentedImage = augmentation.apply(to: image)
+let augmentedImage = augmentation.apply(to: image, height: 28, width: 28, channels: 1)
 ```
 
-**Implementation tasks**:
-- [ ] Image flipping (horizontal, vertical)
-- [ ] Rotation with bilinear interpolation
-- [ ] Zoom/crop transformations
-- [ ] Brightness/contrast adjustment
-- [ ] Gaussian noise injection
-- [ ] Random erasing/cutout
-- [ ] MixUp and CutMix
+Additional augmentation techniques:
+- MixUp and CutMix for advanced data mixing
+- Random erasing/cutout
+- Contrast adjustment
 
-### Full CoreML Model Export/Import
+### CoreML Model Export
 
-**Priority: Medium**
-
-Complete CoreML integration for deploying models to iOS/macOS apps.
+Export trained models to CoreML format:
 
 ```swift
-// Planned API
-// Export
-let coreMLURL = URL(fileURLWithPath: "MyModel.mlmodel")
-try model.exportToCoreML(to: coreMLURL, inputName: "image", outputName: "prediction")
+// Export to JSON specification
+try model.exportForCoreML(to: URL(fileURLWithPath: "model_spec.json"), inputShape: [1, 784])
 
-// Import
-let importedModel = try SequentialModel.importFromCoreML(from: coreMLURL)
+// Generate Python converter script
+let script = model.generateCoreMLConverter(
+    jsonPath: "model_spec.json",
+    outputPath: "MyModel.mlmodel"
+)
+try script.write(to: URL(fileURLWithPath: "convert.py"), atomically: true, encoding: .utf8)
 ```
-
-**Implementation tasks**:
-- [ ] Build CoreML model specification programmatically
-- [ ] Map MLSwift layers to CoreML layers
-- [ ] Handle layer configuration export
-- [ ] Support quantization options
-- [ ] Validation and testing tools
 
 ### Native Image Format Loading (JPEG, PNG)
 
-**Priority: Medium**
-
-Load images directly without Python preprocessing.
+Load images directly without external tools:
 
 ```swift
-// Planned API
+// Load single image
 let image = try ImageLoader.load(from: URL(fileURLWithPath: "image.png"))
 let grayscale = image.toGrayscale()
-let resized = image.resize(to: CGSize(width: 28, height: 28))
+let resized = image.resize(to: 28, newHeight: 28)
 let matrix = image.toMatrix()
-```
 
-**Implementation tasks**:
-- [ ] JPEG decoding using ImageIO
-- [ ] PNG decoding using ImageIO
-- [ ] Color space conversion (RGB → Grayscale)
-- [ ] Image resizing with interpolation
-- [ ] Matrix conversion helpers
-- [ ] Batch loading utilities
+// Load and preprocess a directory
+let images = try ImageLoader.loadAndPreprocess(
+    from: directoryURL,
+    targetWidth: 28,
+    targetHeight: 28,
+    grayscale: true
+)
+```
 
 ### Visualization Tools
 
-**Priority: Low**
-
-Tools for understanding and debugging models.
+Model inspection and training monitoring:
 
 ```swift
-// Planned API
-// Loss plotting
-let plot = TrainingPlot()
-plot.addLossPoint(epoch: 1, trainLoss: 0.5, valLoss: 0.6)
-plot.save(to: URL(fileURLWithPath: "loss_plot.png"))
-
 // Model summary
 model.summary()
 // Output:
-// Layer               Output Shape     Params
-// Dense               (128,)          100,480
-// ReLU                (128,)          0
-// Dense               (10,)           1,290
+// ======================================================================
+// Model Summary
+// ======================================================================
+// Layer (type)             Output Shape         Param #
+// ----------------------------------------------------------------------
+// dense_0 (Dense)          (128,)              100,480
+// relu_1 (ReLU)            (128,)              0
+// dense_2 (Dense)          (10,)               1,290
+// ======================================================================
 // Total params: 101,770
+// Trainable params: 101,770
 
-// Feature visualization
-let activations = model.getLayerOutputs(input: sampleImage)
+// Training history and logging
+let logger = TrainingLogger(verbosity: .normal)
+let history = TrainingHistory()
+
+// Confusion matrix
+let cm = model.evaluateWithConfusionMatrix(
+    inputs: testInputs,
+    targets: testTargets,
+    numClasses: 10,
+    labels: ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]
+)
+cm.print()
 ```
-
-**Implementation tasks**:
-- [ ] Training metrics logging
-- [ ] Loss/accuracy plotting
-- [ ] Model architecture summary
-- [ ] Layer activation visualization
-- [ ] Gradient visualization
-- [ ] Confusion matrix display
 
 ### Learning Rate Schedulers
 
-**Priority: Medium**
-
-Automatic learning rate adjustment during training.
+Multiple scheduling strategies:
 
 ```swift
-// Planned API
+// Step decay
 let scheduler = LearningRateScheduler.stepDecay(
     initialLR: 0.01,
     decayFactor: 0.1,
-    decayEvery: 30  // epochs
+    decayEvery: 30
 )
 
-// Or
+// Cosine annealing
 let scheduler = LearningRateScheduler.cosineAnnealing(
     initialLR: 0.01,
     minLR: 0.0001,
     cycleLength: 50
 )
 
+// Warmup with another scheduler
+let scheduler = LearningRateScheduler.warmup(
+    warmupEpochs: 5,
+    initialLR: 0.0,
+    targetLR: 0.01,
+    afterWarmup: LearningRateScheduler.cosineAnnealing(...)
+)
+
 // Usage
 for epoch in 1...100 {
     let lr = scheduler.learningRate(for: epoch)
-    train(model, learningRate: lr)
+    // train with lr
 }
 ```
 
-**Implementation tasks**:
-- [ ] Step decay scheduler
-- [ ] Exponential decay scheduler
-- [ ] Cosine annealing scheduler
-- [ ] Cyclic learning rate
-- [ ] Warmup scheduler
-- [ ] Reduce on plateau
-
 ### Gradient Clipping
+
+Prevent exploding gradients:
+
+```swift
+// Clip by value
+var gradients = model.collectGradients()
+GradientClipping.clip(&gradients, config: .byValue(maxValue: 1.0))
+
+// Clip by norm
+GradientClipping.clip(&gradients, config: .byNorm(maxNorm: 1.0))
+
+// Clip by global norm (recommended for RNNs)
+GradientClipping.clip(&gradients, config: .globalNorm(maxNorm: 5.0))
+```
+
+## Planned Features
+
+### Multi-GPU Training
 
 **Priority: Medium**
 
-Prevent exploding gradients in deep networks.
+Distribute training across multiple GPUs for faster training.
 
-```swift
-// Planned API
-model.setGradientClipping(.byValue(maxValue: 1.0))
-// or
-model.setGradientClipping(.byNorm(maxNorm: 1.0))
-// or
-model.setGradientClipping(.globalNorm(maxNorm: 5.0))
-```
+### Mixed Precision Training
 
-**Implementation tasks**:
-- [ ] Per-parameter value clipping
-- [ ] Per-parameter norm clipping
-- [ ] Global gradient norm clipping
-- [ ] Integration with training loop
-- [ ] Metal-accelerated clipping
+**Priority: Medium**
+
+Use Float16 for faster computation while maintaining accuracy.
+
+### Attention Mechanisms
+
+**Priority: High**
+
+Self-attention and transformer architectures.
+
+### Pre-trained Models
+
+**Priority: Low**
+
+Load pre-trained weights from common architectures.
 
 ## Known Limitations
 
 ### Current Limitations
 
-1. **No Convolutional Layers**: Limited to fully-connected architectures
-2. **No RNN Support**: Cannot process variable-length sequences
-3. **Manual Data Loading**: Requires Python for dataset preparation
-4. **Limited Visualization**: No built-in plotting or debugging tools
-5. **macOS Only**: Not tested on iOS, though Metal should work
-6. **Single GPU**: No multi-GPU or distributed training
+1. **macOS Only**: Not tested on iOS, though Metal should work
+2. **Single GPU**: No multi-GPU or distributed training
+3. **No Bidirectional RNNs**: LSTM/GRU are unidirectional only
+4. **Limited Metal Optimization**: Conv/RNN layers use CPU only
 
 ### Performance Notes
 
@@ -314,16 +312,16 @@ swift run MLSwiftExample
 - Performance benchmarks
 
 **Intermediate**:
-- Implement learning rate schedulers
-- Add gradient clipping
+- Add bidirectional RNN support
+- Metal acceleration for conv/RNN layers
 - Improve error messages
 - CSV/JSON data loading
 
 **Advanced**:
-- Implement convolutional layers
-- Add LSTM/GRU layers
-- CoreML export functionality
-- Metal shader optimizations
+- Attention mechanisms / Transformers
+- Multi-GPU training
+- Mixed precision training
+- Pre-trained model loading
 
 ### Pull Request Guidelines
 
@@ -363,20 +361,27 @@ swift run MLSwiftExample
 
 ## Summary
 
-MLSwift provides a solid foundation for neural network development on Apple Silicon with:
+MLSwift provides comprehensive neural network development capabilities on Apple Silicon:
 
-- ✅ GPU-accelerated matrix operations
-- ✅ Common layer types and activations
-- ✅ Multiple optimizers
-- ✅ Model serialization
-- ✅ Data processing utilities
+### Complete Features ✅
+- GPU-accelerated matrix operations (Metal)
+- Convolutional layers (Conv2D, MaxPool2D, AvgPool2D, Flatten)
+- Recurrent layers (LSTM, GRU, Embedding)
+- Multiple layer types (Dense, ReLU, Softmax, Sigmoid, Tanh, Dropout, BatchNorm)
+- Multiple optimizers (SGD, Adam, RMSprop)
+- Learning rate schedulers (Step, Exponential, Cosine, Warmup)
+- Gradient clipping (by value, by norm, global norm)
+- Data augmentation (flip, rotate, zoom, brightness, noise, cutout, mixup)
+- Image loading (JPEG, PNG via ImageIO)
+- Model serialization (JSON)
+- CoreML export
+- Visualization tools (model summary, confusion matrix, training history)
 
-Planned features will expand capabilities to include:
-- 🔜 Convolutional networks for images
-- 🔜 Recurrent networks for sequences
-- 🔜 Data augmentation
-- 🔜 CoreML integration
-- 🔜 Visualization tools
+### Planned Features 🔜
+- Multi-GPU training
+- Attention mechanisms / Transformers
+- Mixed precision training
+- Pre-trained model loading
 
 Thank you for using MLSwift! We look forward to your contributions.
 

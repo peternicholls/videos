@@ -27,11 +27,14 @@ let loadedModel = try SequentialModel.load(from: URL(fileURLWithPath: "model.jso
 
 | Category | Features |
 |----------|----------|
-| **Layers** | Dense, ReLU, Softmax, Sigmoid, Tanh, Dropout, BatchNorm |
+| **Layers** | Dense, Conv2D, MaxPool2D, LSTM, GRU, Embedding, ReLU, Softmax, Sigmoid, Tanh, Dropout, BatchNorm, Flatten |
 | **Loss Functions** | Cross-Entropy, MSE, Binary Cross-Entropy |
 | **Optimizers** | SGD, SGD+Momentum, Adam, RMSprop |
+| **Training** | Learning rate schedulers, Gradient clipping, Training history/logging |
+| **Data** | Image loading (JPEG/PNG), Data augmentation, Normalization, One-hot encoding |
 | **GPU Acceleration** | Metal compute shaders for matrix ops (up to 18x speedup) |
-| **Model I/O** | JSON serialization for save/load |
+| **Model I/O** | JSON serialization, CoreML export |
+| **Visualization** | Model summary, Confusion matrix, Training metrics |
 
 ## Requirements
 
@@ -64,16 +67,6 @@ swift build && swift test && swift run MLSwiftExample
 |-----------|-------------|-----|-----|---------|
 | Multiply | 512×512 | 180ms | 20ms | **9x** |
 | Multiply | 1024×1024 | 1.45s | 80ms | **18x** |
-
-## Roadmap
-
-**Planned features:**
-- [ ] Convolutional layers (CNNs)
-- [ ] Recurrent layers (LSTM, GRU)
-- [ ] Data augmentation
-- [ ] Full CoreML export
-- [ ] Learning rate schedulers
-- [ ] Gradient clipping
 
 ## License
 
