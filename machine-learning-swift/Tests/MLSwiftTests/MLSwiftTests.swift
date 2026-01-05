@@ -575,3 +575,321 @@ final class SerializationTests: XCTestCase {
         try? FileManager.default.removeItem(at: tempURL)
     }
 }
+
+// MARK: - New Feature Tests (Planned Features Implementation)
+
+final class LearningRateSchedulerTests: XCTestCase {
+    
+    func testStepDecayScheduler() {
+        let scheduler = LearningRateScheduler.stepDecay(
+            initialLR: 0.1,
+            decayFactor: 0.1,
+            decayEvery: 10
+        )
+        
+        // Epoch 1: Initial LR
+        XCTAssertEqual(scheduler.learningRate(for: 1), 0.1, accuracy: 0.001)
+        
+        // Epoch 10: Still initial LR
+        XCTAssertEqual(scheduler.learningRate(for: 10), 0.1, accuracy: 0.001)
+        
+        // Epoch 11: First decay
+        XCTAssertEqual(scheduler.learningRate(for: 11), 0.01, accuracy: 0.001)
+        
+        // Epoch 21: Second decay
+        XCTAssertEqual(scheduler.learningRate(for: 21), 0.001, accuracy: 0.0001)
+    }
+    
+    func testExponentialDecayScheduler() {
+        let scheduler = LearningRateScheduler.exponentialDecay(
+            initialLR: 0.1,
+            decayRate: 0.9
+        )
+        
+        // Epoch 1: Initial LR
+        XCTAssertEqual(scheduler.learningRate(for: 1), 0.1, accuracy: 0.001)
+        
+        // Epoch 2: 0.1 * 0.9 = 0.09
+        XCTAssertEqual(scheduler.learningRate(for: 2), 0.09, accuracy: 0.001)
+        
+        // LR should decrease each epoch
+        let lr1 = scheduler.learningRate(for: 5)
+        let lr2 = scheduler.learningRate(for: 10)
+        XCTAssertTrue(lr2 < lr1)
+    }
+    
+    func testCosineAnnealingScheduler() {
+        let scheduler = LearningRateScheduler.cosineAnnealing(
+            initialLR: 0.1,
+            minLR: 0.001,
+            cycleLength: 10
+        )
+        
+        // Epoch 1: Should be close to initial LR
+        XCTAssertEqual(scheduler.learningRate(for: 1), 0.1, accuracy: 0.01)
+        
+        // Mid cycle should be lower
+        let midLR = scheduler.learningRate(for: 5)
+        XCTAssertTrue(midLR < 0.1 && midLR > 0.001)
+        
+        // All LRs should be in range
+        for epoch in 1...20 {
+            let lr = scheduler.learningRate(for: epoch)
+            XCTAssertTrue(lr >= 0.001 && lr <= 0.1)
+        }
+    }
+    
+    func testWarmupScheduler() {
+        let scheduler = LearningRateScheduler.warmup(
+            warmupEpochs: 5,
+            initialLR: 0.0,
+            targetLR: 0.1
+        )
+        
+        // During warmup, LR should increase
+        let lr1 = scheduler.learningRate(for: 1)
+        let lr3 = scheduler.learningRate(for: 3)
+        let lr5 = scheduler.learningRate(for: 5)
+        
+        XCTAssertTrue(lr1 < lr3)
+        XCTAssertTrue(lr3 < lr5)
+        XCTAssertEqual(lr5, 0.1, accuracy: 0.001)
+        
+        // After warmup, should stay at target
+        XCTAssertEqual(scheduler.learningRate(for: 6), 0.1, accuracy: 0.001)
+    }
+}
+
+final class GradientClippingTests: XCTestCase {
+    
+    func testClipByValue() {
+        var gradients = [Matrix(rows: 2, cols: 2, data: [-5.0, 3.0, 10.0, -2.0])]
+        
+        GradientClipping.clipByValue(&gradients, maxValue: 2.0)
+        
+        XCTAssertEqual(gradients[0].data[0], -2.0, accuracy: 0.001)  // Clipped from -5
+        XCTAssertEqual(gradients[0].data[1], 2.0, accuracy: 0.001)   // Clipped from 3
+        XCTAssertEqual(gradients[0].data[2], 2.0, accuracy: 0.001)   // Clipped from 10
+        XCTAssertEqual(gradients[0].data[3], -2.0, accuracy: 0.001)  // Same
+    }
+    
+    func testClipByNorm() {
+        // Create a gradient with known norm
+        var gradients = [Matrix(rows: 2, cols: 1, data: [3.0, 4.0])]  // Norm = 5
+        
+        GradientClipping.clipByNorm(&gradients, maxNorm: 2.5)
+        
+        // After clipping, norm should be 2.5
+        let norm = GradientClipping.l2Norm(gradients[0])
+        XCTAssertEqual(norm, 2.5, accuracy: 0.01)
+    }
+    
+    func testClipByGlobalNorm() {
+        var gradients = [
+            Matrix(rows: 2, cols: 1, data: [3.0, 0.0]),
+            Matrix(rows: 2, cols: 1, data: [0.0, 4.0])
+        ]
+        // Global norm = sqrt(9 + 16) = 5
+        
+        GradientClipping.clipByGlobalNorm(&gradients, maxNorm: 2.5)
+        
+        let globalNorm = GradientClipping.computeGlobalNorm(gradients)
+        XCTAssertEqual(globalNorm, 2.5, accuracy: 0.01)
+    }
+}
+
+final class ConvolutionalLayerTests: XCTestCase {
+    
+    func testConv2DLayerForward() {
+        let conv = Conv2DLayer(
+            inputChannels: 1,
+            outputChannels: 2,
+            kernelSize: 3,
+            stride: 1,
+            padding: .valid
+        )
+        
+        // 1 channel, 5x5 image
+        let input = Matrix(rows: 25, cols: 1, value: 1.0)
+        let output = conv.forward(input)
+        
+        // Output should be 2 * 3 * 3 = 18 (output is 3x3 with 2 channels)
+        XCTAssertEqual(output.rows, 18)
+        XCTAssertEqual(output.cols, 1)
+    }
+    
+    func testMaxPool2DLayerForward() {
+        let pool = MaxPool2DLayer(poolSize: 2)
+        
+        // 1 channel, 4x4 image with known values
+        var input = Matrix(rows: 16, cols: 1)
+        for i in 0..<16 {
+            input.data[i] = Float(i)
+        }
+        
+        let output = pool.forward(input)
+        
+        // Output should be 1 * 2 * 2 = 4
+        XCTAssertEqual(output.rows, 4)
+        
+        // Max pooling should select maximum values
+        // For 2x2 pool on 4x4: max of [0,1,4,5]=5, [2,3,6,7]=7, [8,9,12,13]=13, [10,11,14,15]=15
+        XCTAssertEqual(output.data[0], 5.0, accuracy: 0.001)
+        XCTAssertEqual(output.data[1], 7.0, accuracy: 0.001)
+        XCTAssertEqual(output.data[2], 13.0, accuracy: 0.001)
+        XCTAssertEqual(output.data[3], 15.0, accuracy: 0.001)
+    }
+    
+    func testFlattenLayer() {
+        let flatten = FlattenLayer()
+        
+        let input = Matrix(rows: 4, cols: 3, data: Array(0..<12).map { Float($0) })
+        let output = flatten.forward(input)
+        
+        // Should flatten to column vector
+        XCTAssertEqual(output.rows, 12)
+        XCTAssertEqual(output.cols, 1)
+    }
+}
+
+final class RecurrentLayerTests: XCTestCase {
+    
+    func testLSTMLayerForward() {
+        let lstm = LSTMLayer(inputSize: 4, hiddenSize: 8, returnSequences: false)
+        
+        // Sequence of length 3, input size 4
+        let input = Matrix(rows: 12, cols: 1, value: 0.5)
+        let output = lstm.forward(input)
+        
+        // Output should be hidden size (8)
+        XCTAssertEqual(output.rows, 8)
+        XCTAssertEqual(output.cols, 1)
+    }
+    
+    func testLSTMLayerReturnSequences() {
+        let lstm = LSTMLayer(inputSize: 4, hiddenSize: 8, returnSequences: true)
+        
+        // Sequence of length 3, input size 4
+        let input = Matrix(rows: 12, cols: 1, value: 0.5)
+        let output = lstm.forward(input)
+        
+        // Output should be sequence length * hidden size (3 * 8 = 24)
+        XCTAssertEqual(output.rows, 24)
+        XCTAssertEqual(output.cols, 1)
+    }
+    
+    func testGRULayerForward() {
+        let gru = GRULayer(inputSize: 4, hiddenSize: 8, returnSequences: false)
+        
+        // Sequence of length 3, input size 4
+        let input = Matrix(rows: 12, cols: 1, value: 0.5)
+        let output = gru.forward(input)
+        
+        // Output should be hidden size (8)
+        XCTAssertEqual(output.rows, 8)
+        XCTAssertEqual(output.cols, 1)
+    }
+    
+    func testEmbeddingLayer() {
+        let embedding = EmbeddingLayer(vocabSize: 100, embeddingDim: 32)
+        
+        // Sequence of 3 token indices
+        let input = Matrix(rows: 3, cols: 1, data: [5.0, 10.0, 15.0])
+        let output = embedding.forward(input)
+        
+        // Output should be 3 * 32 = 96
+        XCTAssertEqual(output.rows, 96)
+        XCTAssertEqual(output.cols, 1)
+    }
+}
+
+final class DataAugmentationTests: XCTestCase {
+    
+    func testBrightnessAugmentation() {
+        let augmentation = DataAugmentation()
+            .randomBrightness(range: 0.0)  // No random range for testing
+        
+        let input = Matrix(rows: 4, cols: 1, data: [0.5, 0.5, 0.5, 0.5])
+        let output = augmentation.apply(to: input, height: 2, width: 2, channels: 1)
+        
+        // With 0 range, output should be same as input
+        XCTAssertEqual(output.rows, 4)
+    }
+    
+    func testNoiseAugmentation() {
+        let augmentation = DataAugmentation()
+            .randomNoise(stdDev: 0.1)
+        
+        let input = Matrix(rows: 16, cols: 1, value: 0.5)
+        let output = augmentation.apply(to: input, height: 4, width: 4, channels: 1)
+        
+        // Output should be same shape
+        XCTAssertEqual(output.rows, 16)
+        
+        // Values should be modified but stay in valid range
+        for val in output.data {
+            XCTAssertTrue(val >= 0.0 && val <= 1.0)
+        }
+    }
+}
+
+final class VisualizationTests: XCTestCase {
+    
+    func testTrainingHistory() {
+        let history = TrainingHistory()
+        
+        history.record(epoch: 1, trainLoss: 0.5, valLoss: 0.6, trainAccuracy: 0.7, valAccuracy: 0.65)
+        history.record(epoch: 2, trainLoss: 0.4, valLoss: 0.5, trainAccuracy: 0.8, valAccuracy: 0.75)
+        history.record(epoch: 3, trainLoss: 0.3, valLoss: 0.45, trainAccuracy: 0.85, valAccuracy: 0.8)
+        
+        XCTAssertEqual(history.trainLoss.count, 3)
+        XCTAssertEqual(history.bestEpoch(), 2)  // Epoch 3 (0-indexed: 2) has lowest val loss
+    }
+    
+    func testConfusionMatrix() {
+        let cm = ConfusionMatrix(numClasses: 3, labels: ["A", "B", "C"])
+        
+        // Add some predictions
+        cm.add(actual: 0, predicted: 0)
+        cm.add(actual: 0, predicted: 0)
+        cm.add(actual: 0, predicted: 1)
+        cm.add(actual: 1, predicted: 1)
+        cm.add(actual: 2, predicted: 2)
+        cm.add(actual: 2, predicted: 1)
+        
+        // Check accuracy: 4 correct out of 6
+        XCTAssertEqual(cm.accuracy(), 4.0/6.0, accuracy: 0.01)
+        
+        // Check precision for class 0: 2 true positives, 2 predicted
+        XCTAssertEqual(cm.precision(forClass: 0), 1.0, accuracy: 0.01)
+        
+        // Check recall for class 0: 2 true positives out of 3 actual
+        XCTAssertEqual(cm.recall(forClass: 0), 2.0/3.0, accuracy: 0.01)
+    }
+}
+
+final class CoreMLExportTests: XCTestCase {
+    
+    func testJSONExport() throws {
+        let model = SequentialModel()
+        model.add(DenseLayer(inputSize: 784, outputSize: 128))
+        model.add(ReLULayer())
+        model.add(DenseLayer(inputSize: 128, outputSize: 10))
+        model.add(SoftmaxLayer())
+        
+        let json = try CoreMLExport.exportToJSON(
+            model: model,
+            inputName: "image",
+            inputShape: [1, 784],
+            outputName: "prediction"
+        )
+        
+        // Verify JSON structure
+        XCTAssertTrue(json.contains("\"format\""))
+        XCTAssertTrue(json.contains("MLSwift-CoreML-Export"))
+        XCTAssertTrue(json.contains("\"layers\""))
+        XCTAssertTrue(json.contains("innerProduct"))
+        XCTAssertTrue(json.contains("ReLU"))
+        XCTAssertTrue(json.contains("softmax"))
+    }
+}
