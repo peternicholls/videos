@@ -334,6 +334,92 @@ func metalAccelerationDemo() {
     #endif
 }
 
+/// Example 6: Demonstrate model saving and loading (from README documentation)
+func modelPersistenceExample() {
+    print("=== Model Persistence Example ===\n")
+    
+    // Create and train a simple model
+    print("Creating and training a model...")
+    let model = SequentialModel()
+    model.add(DenseLayer(inputSize: 8, outputSize: 12))
+    model.add(ReLULayer())
+    model.add(DenseLayer(inputSize: 12, outputSize: 3))
+    model.add(SoftmaxLayer())
+    
+    model.setLoss(Loss.crossEntropy, gradient: Loss.crossEntropyBackward)
+    
+    // Generate training data
+    var trainInputs: [Matrix] = []
+    var trainTargets: [Matrix] = []
+    
+    for _ in 0..<100 {
+        let classLabel = Int.random(in: 0..<3)
+        let features = [Float](repeating: 0, count: 8).map { _ in 
+            Float.random(in: -1.0...1.0) + Float(classLabel) * 0.4
+        }
+        trainInputs.append(Matrix(rows: 8, cols: 1, data: features))
+        
+        var oneHot = [Float](repeating: 0.0, count: 3)
+        oneHot[classLabel] = 1.0
+        trainTargets.append(Matrix(rows: 3, cols: 1, data: oneHot))
+    }
+    
+    // Train briefly
+    for epoch in 1...5 {
+        var totalLoss: Float = 0.0
+        for (input, target) in zip(trainInputs, trainTargets) {
+            totalLoss += model.trainStep(input: input, target: target, learningRate: 0.01)
+        }
+        if epoch % 2 == 0 {
+            print("Epoch \(epoch): Loss = \(String(format: "%.4f", totalLoss / Float(trainInputs.count)))")
+        }
+    }
+    
+    // Save the model
+    let saveURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent("example_model_\(UUID().uuidString).json")
+    
+    do {
+        try model.save(to: saveURL)
+        print("\nModel saved to: \(saveURL.lastPathComponent)")
+        
+        // Check file size
+        if let attributes = try? FileManager.default.attributesOfItem(atPath: saveURL.path),
+           let fileSize = attributes[.size] as? Int {
+            print("File size: \(String(format: "%.2f", Float(fileSize) / 1024.0)) KB")
+        }
+        
+        // Load the model back
+        let loadedModel = try SequentialModel.load(from: saveURL)
+        print("Model loaded successfully!")
+        print("Loaded model has \(loadedModel.getLayers().count) layers")
+        
+        // Verify models produce same output
+        let testInput = trainInputs[0]
+        let originalOutput = model.forward(testInput)
+        let loadedOutput = loadedModel.forward(testInput)
+        
+        var maxDiff: Float = 0.0
+        for i in 0..<originalOutput.data.count {
+            let diff = abs(originalOutput.data[i] - loadedOutput.data[i])
+            maxDiff = max(maxDiff, diff)
+        }
+        
+        print("Max difference between original and loaded: \(String(format: "%.10f", maxDiff))")
+        if maxDiff < 0.0001 {
+            print("✓ Serialization verified - models match!")
+        }
+        
+        // Clean up
+        try? FileManager.default.removeItem(at: saveURL)
+        
+    } catch {
+        print("Error with model persistence: \(error)")
+    }
+    
+    print()
+}
+
 // Main program
 print("MLSwift - Neural Network Library for Apple Silicon\n")
 #if canImport(Metal)
@@ -349,6 +435,7 @@ xorExample()
 classificationExample()
 advancedFeaturesExample()
 optimizerComparison()
+modelPersistenceExample()
 metalAccelerationDemo()
 
 print("All examples completed!")
