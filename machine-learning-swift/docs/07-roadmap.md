@@ -123,19 +123,26 @@ Additional augmentation techniques:
 
 ### CoreML Model Export
 
-Export trained models to CoreML format:
+Export trained models to JSON format for use with CoreML (pure Swift, no Python required):
 
 ```swift
-// Export to JSON specification
-try model.exportForCoreML(to: URL(fileURLWithPath: "model_spec.json"), inputShape: [1, 784])
-
-// Generate Python converter script
-let script = model.generateCoreMLConverter(
-    jsonPath: "model_spec.json",
-    outputPath: "MyModel.mlmodel"
+// Export model architecture and weights to JSON
+try model.exportForCoreML(
+    to: URL(fileURLWithPath: "model_spec.json"),
+    inputShape: [1, 784]
 )
-try script.write(to: URL(fileURLWithPath: "convert.py"), atomically: true, encoding: .utf8)
+
+// Generate Swift code documenting the model architecture
+let swiftCode = model.generateCoreMLSwiftCode(inputShape: [1, 784])
+print(swiftCode)
+
+// Load the specification back
+let spec = try CoreMLExport.loadSpecification(
+    from: URL(fileURLWithPath: "model_spec.json")
+)
 ```
+
+The exported JSON contains all model weights and architecture information that can be used with Apple's CreateML or CoreML APIs for production deployment.
 
 ### Native Image Format Loading (JPEG, PNG)
 

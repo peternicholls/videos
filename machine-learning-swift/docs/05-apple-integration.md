@@ -286,24 +286,26 @@ func useCoreMLModel() throws {
 ### Recommended Workflow
 
 1. **Train** with MLSwift (GPU-accelerated training)
-2. **Save** model using MLSwift's JSON format
-3. **Convert** to CoreML using Python's coremltools (for production)
+2. **Export** model architecture and weights to JSON
+3. **Use** CreateML or CoreML APIs for production deployment
 4. **Deploy** CoreML model to iOS/macOS apps
 
-```python
-# Python conversion (using coremltools)
-import coremltools as ct
-import json
+```swift
+// Export model to JSON (pure Swift)
+try model.exportForCoreML(
+    to: URL(fileURLWithPath: "model_spec.json"),
+    inputShape: [1, 784]
+)
 
-# Load MLSwift model JSON
-with open('model.json', 'r') as f:
-    model_data = json.load(f)
+// Generate Swift code documenting the architecture
+let swiftCode = model.generateCoreMLSwiftCode(inputShape: [1, 784])
+print(swiftCode)
 
-# Build CoreML model (pseudo-code)
-# builder = ct.models.neural_network.NeuralNetworkBuilder(...)
-# ... add layers from model_data ...
-# mlmodel = builder.spec
-# ct.utils.save_spec(mlmodel, 'Model.mlmodel')
+// Load the specification back
+let spec = try CoreMLExport.loadSpecification(
+    from: URL(fileURLWithPath: "model_spec.json")
+)
+// Access weights from spec["layers"]
 ```
 
 ## Performance Optimization

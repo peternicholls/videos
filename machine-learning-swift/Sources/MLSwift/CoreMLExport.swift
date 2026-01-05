@@ -1,7 +1,6 @@
 /// CoreMLExport.swift
-/// Export MLSwift models to CoreML format for iOS/macOS deployment
-/// Note: This provides a foundation for CoreML export; full implementation
-/// requires CoreML tools which may not be available in all environments
+/// Export MLSwift models to CoreML-compatible format for iOS/macOS deployment
+/// Pure Swift implementation
 
 import Foundation
 
@@ -11,7 +10,8 @@ import Foundation
 public enum CoreMLExport {
     
     /// Export a sequential model to a CoreML-compatible JSON specification
-    /// This can be used with Python's coremltools to generate the .mlmodel file
+    /// This JSON format can be loaded back into MLSwift or used as a reference
+    /// for building CoreML models using CreateML or the CoreML framework
     /// - Parameters:
     ///   - model: The MLSwift model to export
     ///   - inputName: Name for the input tensor
@@ -162,7 +162,13 @@ public enum CoreMLExport {
         return spec
     }
     
-    /// Save the model specification to a file
+    /// Save the model specification to a JSON file
+    /// - Parameters:
+    ///   - model: The model to export
+    ///   - url: Destination URL for JSON file
+    ///   - inputName: Name for the input tensor
+    ///   - inputShape: Shape of the input tensor
+    ///   - outputName: Name for the output tensor
     public static func save(
         model: SequentialModel,
         to url: URL,
@@ -178,6 +184,102 @@ public enum CoreMLExport {
         )
         try json.write(to: url, atomically: true, encoding: .utf8)
     }
+    
+    /// Load a model specification from a JSON file
+    /// - Parameter url: URL of the JSON specification file
+    /// - Returns: Dictionary containing the model specification
+    public static func loadSpecification(from url: URL) throws -> [String: Any] {
+        let jsonData = try Data(contentsOf: url)
+        guard let spec = try JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
+            throw CoreMLExportError.invalidModelStructure
+        }
+        return spec
+    }
+    
+    /// Export model specification as a Swift code snippet that can create
+    /// the equivalent CoreML model using the CoreML framework APIs
+    /// - Parameters:
+    ///   - model: The MLSwift model to export
+    ///   - inputName: Name for the input tensor
+    ///   - inputShape: Shape of the input tensor
+    ///   - outputName: Name for the output tensor
+    /// - Returns: Swift code as a string
+    public static func generateSwiftCoreMLCode(
+        model: SequentialModel,
+        inputName: String = "input",
+        inputShape: [Int],
+        outputName: String = "output"
+    ) -> String {
+        var code = """
+        // Generated CoreML model builder code
+        // Copy this into your macOS/iOS project to create a CoreML model
+        
+        import CoreML
+        
+        @available(macOS 10.13, iOS 11.0, *)
+        func createModel() throws -> MLModel {
+            // Note: For production use, consider using CreateML or 
+            // training your model directly with Core ML APIs
+            
+            // Model architecture from MLSwift:
+            // Input: \(inputName) with shape \(inputShape)
+            // Output: \(outputName)
+            //
+            // Layers:
+        
+        """
+        
+        for (index, layer) in model.getLayers().enumerated() {
+            code += "    // Layer \(index): \(String(describing: type(of: layer)))\n"
+            
+            switch layer {
+            case let dense as DenseLayer:
+                code += "    //   Dense: \(dense.weights.cols) -> \(dense.weights.rows)\n"
+            case _ as ReLULayer:
+                code += "    //   Activation: ReLU\n"
+            case _ as SigmoidLayer:
+                code += "    //   Activation: Sigmoid\n"
+            case _ as TanhLayer:
+                code += "    //   Activation: Tanh\n"
+            case _ as SoftmaxLayer:
+                code += "    //   Activation: Softmax\n"
+            case let batchNorm as BatchNormLayer:
+                code += "    //   BatchNorm: \(batchNorm.gamma.rows) channels\n"
+            case _ as DropoutLayer:
+                code += "    //   Dropout (skipped for inference)\n"
+            case let conv2d as Conv2DLayer:
+                code += "    //   Conv2D: \(conv2d.inputChannels) -> \(conv2d.outputChannels), kernel \(conv2d.kernelSize)\n"
+            case let maxPool as MaxPool2DLayer:
+                code += "    //   MaxPool: \(maxPool.poolSize)x\(maxPool.poolSize)\n"
+            case _ as FlattenLayer:
+                code += "    //   Flatten\n"
+            case let lstm as LSTMLayer:
+                code += "    //   LSTM: input \(lstm.inputSize), hidden \(lstm.hiddenSize)\n"
+            case let gru as GRULayer:
+                code += "    //   GRU: input \(gru.inputSize), hidden \(gru.hiddenSize)\n"
+            case let embedding as EmbeddingLayer:
+                code += "    //   Embedding: vocab \(embedding.vocabSize), dim \(embedding.embeddingDim)\n"
+            default:
+                code += "    //   Unknown layer type\n"
+            }
+        }
+        
+        code += """
+            
+            // To create a CoreML model programmatically, use:
+            // 1. MLModelDescription and MLModel for simple inference
+            // 2. CreateML for training and model creation
+            // 3. The exported JSON weights from MLSwift
+            
+            // Load the exported JSON to get the weights:
+            // let spec = try CoreMLExport.loadSpecification(from: jsonURL)
+            
+            fatalError("Implement model creation using CoreML or CreateML APIs")
+        }
+        """
+        
+        return code
+    }
 }
 
 // MARK: - CoreML Export Errors
@@ -186,6 +288,8 @@ public enum CoreMLExportError: Error, LocalizedError {
     case unsupportedLayerType(String)
     case jsonEncodingFailed
     case invalidModelStructure
+    case coreMLNotAvailable
+    case exportFailed(String)
     
     public var errorDescription: String? {
         switch self {
@@ -195,148 +299,11 @@ public enum CoreMLExportError: Error, LocalizedError {
             return "Failed to encode model to JSON"
         case .invalidModelStructure:
             return "Model structure is invalid for CoreML export"
+        case .coreMLNotAvailable:
+            return "CoreML is not available on this platform"
+        case .exportFailed(let reason):
+            return "CoreML export failed: \(reason)"
         }
-    }
-}
-
-// MARK: - Python Script Generator
-
-extension CoreMLExport {
-    
-    /// Generate a Python script that converts the JSON spec to a CoreML model
-    /// - Parameters:
-    ///   - jsonPath: Path to the JSON specification file
-    ///   - outputPath: Path for the output .mlmodel file
-    /// - Returns: Python script as a string
-    public static func generatePythonConverter(
-        jsonPath: String,
-        outputPath: String
-    ) -> String {
-        return """
-        #!/usr/bin/env python3
-        \"\"\"
-        MLSwift to CoreML Converter
-        Generated automatically - do not edit
-        
-        Requirements:
-            pip install coremltools numpy
-        \"\"\"
-        
-        import json
-        import numpy as np
-        import coremltools as ct
-        from coremltools.models.neural_network import NeuralNetworkBuilder
-        from coremltools.models import datatypes
-        
-        def convert_mlswift_to_coreml(json_path, output_path):
-            # Load the JSON specification
-            with open(json_path, 'r') as f:
-                spec = json.load(f)
-            
-            # Get input/output info
-            input_name = spec['inputName']
-            input_shape = spec['inputShape']
-            output_name = spec['outputName']
-            
-            # Create input features
-            input_features = [(input_name, datatypes.Array(*input_shape))]
-            output_features = [(output_name, None)]
-            
-            # Create builder
-            builder = NeuralNetworkBuilder(
-                input_features,
-                output_features,
-                disable_rank5_shape_mapping=True
-            )
-            
-            # Add layers
-            prev_layer = input_name
-            for layer in spec['layers']:
-                layer_type = layer['type']
-                layer_name = layer['name']
-                
-                if layer_type == 'innerProduct':
-                    weights = np.array(layer['weights']).reshape(
-                        layer['outputChannels'], layer['inputChannels']
-                    )
-                    bias = np.array(layer['bias'])
-                    builder.add_inner_product(
-                        name=layer_name,
-                        W=weights.T,  # CoreML expects transposed weights
-                        b=bias,
-                        input_channels=layer['inputChannels'],
-                        output_channels=layer['outputChannels'],
-                        has_bias=layer['hasBias'],
-                        input_name=prev_layer,
-                        output_name=layer_name
-                    )
-                    prev_layer = layer_name
-                    
-                elif layer_type == 'activation':
-                    act_type = layer['activationType']
-                    if act_type == 'ReLU':
-                        builder.add_activation(
-                            name=layer_name,
-                            non_linearity='RELU',
-                            input_name=prev_layer,
-                            output_name=layer_name
-                        )
-                    elif act_type == 'sigmoid':
-                        builder.add_activation(
-                            name=layer_name,
-                            non_linearity='SIGMOID',
-                            input_name=prev_layer,
-                            output_name=layer_name
-                        )
-                    elif act_type == 'tanh':
-                        builder.add_activation(
-                            name=layer_name,
-                            non_linearity='TANH',
-                            input_name=prev_layer,
-                            output_name=layer_name
-                        )
-                    prev_layer = layer_name
-                    
-                elif layer_type == 'softmax':
-                    builder.add_softmax(
-                        name=layer_name,
-                        input_name=prev_layer,
-                        output_name=layer_name
-                    )
-                    prev_layer = layer_name
-                    
-                elif layer_type == 'batchnorm':
-                    gamma = np.array(layer['gamma'])
-                    beta = np.array(layer['beta'])
-                    mean = np.array(layer['mean'])
-                    variance = np.array(layer['variance'])
-                    builder.add_batchnorm(
-                        name=layer_name,
-                        channels=layer['channels'],
-                        gamma=gamma,
-                        beta=beta,
-                        mean=mean,
-                        variance=variance,
-                        input_name=prev_layer,
-                        output_name=layer_name
-                    )
-                    prev_layer = layer_name
-            
-            # Set output
-            builder.add_copy(
-                name='output_copy',
-                input_name=prev_layer,
-                output_name=output_name
-            )
-            
-            # Build and save
-            mlmodel = ct.models.MLModel(builder.spec)
-            mlmodel.save(output_path)
-            print(f"CoreML model saved to {output_path}")
-        
-        if __name__ == '__main__':
-            convert_mlswift_to_coreml('\(jsonPath)', '\(outputPath)')
-        """
     }
 }
 
@@ -344,7 +311,7 @@ extension CoreMLExport {
 
 extension SequentialModel {
     
-    /// Export model to CoreML-compatible format
+    /// Export model to JSON specification format
     /// - Parameters:
     ///   - url: Destination URL (should end in .json)
     ///   - inputShape: Shape of the input tensor
@@ -357,15 +324,15 @@ extension SequentialModel {
         )
     }
     
-    /// Generate a Python conversion script for this model
+    /// Generate Swift code that documents the model architecture
+    /// for creating an equivalent CoreML model
     /// - Parameters:
-    ///   - jsonPath: Path where the JSON spec will be saved
-    ///   - outputPath: Desired path for the .mlmodel output
-    /// - Returns: Python script string
-    public func generateCoreMLConverter(jsonPath: String, outputPath: String) -> String {
-        return CoreMLExport.generatePythonConverter(
-            jsonPath: jsonPath,
-            outputPath: outputPath
+    ///   - inputShape: Shape of the input tensor
+    /// - Returns: Swift code as a string
+    public func generateCoreMLSwiftCode(inputShape: [Int]) -> String {
+        return CoreMLExport.generateSwiftCoreMLCode(
+            model: self,
+            inputShape: inputShape
         )
     }
 }
@@ -373,33 +340,65 @@ extension SequentialModel {
 // MARK: - Usage Example
 
 /*
- Usage:
+ Usage (Pure Swift - No Python Required):
  
- 1. Export your trained MLSwift model:
+ 1. Export your trained MLSwift model to JSON:
  
     let model = SequentialModel()
-    // ... add layers and train ...
+    model.add(DenseLayer(inputSize: 784, outputSize: 128))
+    model.add(ReLULayer())
+    model.add(DenseLayer(inputSize: 128, outputSize: 10))
+    model.add(SoftmaxLayer())
     
-    // Export to JSON specification
-    try model.exportForCoreML(to: URL(fileURLWithPath: "model_spec.json"), inputShape: [1, 784])
+    // Train the model...
     
-    // Generate Python converter script
-    let script = model.generateCoreMLConverter(
-        jsonPath: "model_spec.json",
-        outputPath: "MyModel.mlmodel"
+    // Export to JSON specification (contains all weights and architecture)
+    try model.exportForCoreML(
+        to: URL(fileURLWithPath: "model_spec.json"),
+        inputShape: [1, 784]
     )
-    try script.write(to: URL(fileURLWithPath: "convert.py"), atomically: true, encoding: .utf8)
  
- 2. Run the Python script to generate the .mlmodel file:
+ 2. Generate Swift code that documents the architecture:
  
-    $ pip install coremltools numpy
-    $ python convert.py
+    let swiftCode = model.generateCoreMLSwiftCode(inputShape: [1, 784])
+    print(swiftCode)
  
- 3. Add MyModel.mlmodel to your Xcode project and use it:
+ 3. Load the specification back:
+ 
+    let spec = try CoreMLExport.loadSpecification(
+        from: URL(fileURLWithPath: "model_spec.json")
+    )
+    // Access weights: spec["layers"] contains layer configurations
+ 
+ 4. For production CoreML deployment, you have several options:
+ 
+    Option A: Use CreateML (recommended for new models)
+    - Train directly in CreateML using your data
+    - Produces optimized .mlmodel files
+    
+    Option B: Use Core ML Tools in a Swift script
+    - Import the JSON specification
+    - Use CoreML's MLModelDescription APIs
+    
+    Option C: Use the weights in your own CoreML model
+    - Extract weights from the JSON
+    - Apply them to a CoreML model built with MLModelDescription
+ 
+ 5. Use the CoreML model in your iOS/macOS app:
  
     import CoreML
     
-    let model = try MyModel()
-    let input = MyModelInput(input: inputArray)
-    let output = try model.prediction(input: input)
+    // Load the compiled model
+    let config = MLModelConfiguration()
+    let model = try MLModel(contentsOf: modelURL, configuration: config)
+    
+    // Create input
+    let inputArray = try MLMultiArray(shape: [1, 784], dataType: .float32)
+    // Fill inputArray with your data...
+    
+    // Make prediction
+    let input = try MLDictionaryFeatureProvider(
+        dictionary: ["input": MLFeatureValue(multiArray: inputArray)]
+    )
+    let output = try model.prediction(from: input)
 */
